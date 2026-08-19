@@ -1,0 +1,390 @@
+/*
+ * ForgeOS 내장 앱 스타일 — 터미널 · 활성 상태 보기 · Finder · 교착 상태 관리자.
+ *
+ * theme.css 와 같은 규칙: 색은 tokens-*.css 가 정한 이름만 참조한다.
+ * 여기서 새 색을 만들면 앱마다 조금씩 다른 회색이 생기고, 그 순간 화면 전체가
+ * "같은 시스템"으로 보이지 않게 된다. 라이트 테마에서는 아예 안 보이기도 한다.
+ */
+
+/* ─────────────────────────── 터미널 ─────────────────────────── */
+/*
+ * 터미널만은 두 테마에서 모두 어둡다. 라이트 테마를 켰다고 셸이 하얘지면
+ * ps · meminfo 의 고정폭 출력이 문서처럼 보이고, 무엇보다 부팅 콘솔과
+ * 같은 물건이라는 감각이 끊긴다. 그래서 이 구역만 고정색을 쓴다.
+ */
+
+.terminal {
+    -fx-background-color: #06090d;
+    -fx-background-radius: 0 0 12px 12px;
+}
+
+.terminal-scroll,
+.terminal-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.terminal-output {
+    -fx-padding: 14px 16px;
+    -fx-line-spacing: 1.5px;
+}
+
+/*
+ * 터미널 안의 모든 글자는 고정폭이다. ps · meminfo 같은 명령이 공백으로 열을
+ * 맞춰 출력하므로, 비례폭 글꼴을 쓰면 표가 통째로 무너진다.
+ */
+.terminal-output .text,
+.terminal-input,
+.terminal-prompt {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", "Consolas", monospace;
+    -fx-font-size: 12.5px;
+}
+
+.terminal-result {
+    -fx-fill: #d5dbe4;
+}
+
+.terminal-error {
+    -fx-fill: #ff9c85;
+}
+
+.terminal-echo {
+    -fx-fill: #eceff4;
+}
+
+.terminal-prompt-echo {
+    -fx-fill: #22d3ee;
+}
+
+.terminal-notice {
+    -fx-fill: #ffd189;
+}
+
+.terminal-dim {
+    -fx-fill: #6a7383;
+}
+
+.terminal-input-row {
+    -fx-fill-height: false;
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-border-color: rgba(255, 255, 255, 0.08) transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+    -fx-padding: 8px 16px;
+    -fx-spacing: 6px;
+    -fx-alignment: center-left;
+}
+
+.terminal-prompt {
+    -fx-text-fill: #22d3ee;
+}
+
+/* 입력줄은 상자가 아니라 출력의 연장선처럼 보여야 한다 — 테두리도 배경도 없다. */
+.terminal-input {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: #eceff4;
+    -fx-highlight-fill: rgba(34, 211, 238, 0.30);
+    -fx-padding: 0;
+}
+
+.terminal-input:focused {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+/* ─────────────────────────── 활성 상태 보기 ─────────────────────────── */
+
+.activity-monitor {
+    -fx-background-color: transparent;
+}
+
+.monitor-left {
+    -fx-background-color: transparent;
+}
+
+.monitor-sidebar {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: transparent transparent transparent -edge-line;
+    -fx-border-width: 0 0 0 1px;
+    -fx-padding: 18px 20px;
+    -fx-spacing: 20px;
+    -fx-pref-width: 236px;
+}
+
+.sidebar-note {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: -text-dim;
+    -fx-line-spacing: 2px;
+    -fx-text-alignment: center;
+    -fx-wrap-text: true;
+}
+
+.donut {
+    -fx-spacing: 6px;
+}
+
+.donut-track {
+    -fx-stroke: -fill-medium;
+}
+
+.donut-progress {
+    -fx-stroke: -electric-cyan;
+}
+
+/* 도넛의 강조색은 무엇을 재는지에 따라 다르다.
+   물리 프레임은 소진되면 곤란하므로 Ember, 힙은 주의 신호라 Gold,
+   TLB 적중률은 높을수록 좋은 값이라 Cyan 이다. */
+.accent-ember {
+    -fx-stroke: -forge-ember;
+}
+
+.accent-gold {
+    -fx-stroke: -molten-gold;
+}
+
+.accent-cyan {
+    -fx-stroke: -electric-cyan;
+}
+
+.donut-value {
+    -fx-font-size: 21px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-primary;
+}
+
+.donut-caption {
+    -fx-font-size: 12px;
+    -fx-text-fill: -text-secondary;
+}
+
+.donut-detail {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: -text-dim;
+}
+
+/* 상태 배지 — 색이 곧 의미다. 텍스트를 읽기 전에 상태가 보여야 한다. */
+.state-badge {
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+    -fx-padding: 2px 8px;
+    -fx-background-radius: 5px;
+}
+
+.state-new {
+    -fx-background-color: -fill-medium;
+    -fx-text-fill: -text-secondary;
+}
+
+.state-ready {
+    -fx-background-color: -accent-tint;
+    -fx-text-fill: -accent-text;
+}
+
+.state-running {
+    -fx-background-color: -accent-tint-strong;
+    -fx-text-fill: -accent-text;
+}
+
+.state-waiting {
+    -fx-background-color: -warn-tint;
+    -fx-text-fill: -warn-text;
+}
+
+.state-terminated {
+    -fx-background-color: -danger-tint;
+    -fx-text-fill: -danger-text;
+}
+
+/* ─────────────────────────── Finder ─────────────────────────── */
+
+.finder {
+    -fx-background-color: transparent;
+}
+
+.finder-path {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", "Consolas", monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: -text-secondary;
+}
+
+.finder-scroll,
+.finder-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.finder-columns {
+    -fx-background-color: transparent;
+}
+
+/* 컬럼 사이의 세로선이 macOS Finder 의 그 선이다. 컬럼이 여러 개라는 사실을
+   말해 주는 유일한 장치이므로 지우면 안 된다. */
+.finder-column {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent -edge-line transparent transparent;
+    -fx-border-width: 0 1px 0 0;
+}
+
+.entry-row {
+    -fx-fill-height: false;
+    -fx-padding: 6px 10px;
+    -fx-spacing: 8px;
+}
+
+.entry-name {
+    -fx-font-size: 12.5px;
+    -fx-text-fill: -text-primary;
+}
+
+.entry-size {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: -text-dim;
+}
+
+.entry-icon {
+    -fx-stroke: -electric-cyan;
+    -fx-stroke-width: 1.6;
+}
+
+.list-cell:filled .entry-icon {
+    -fx-stroke: -molten-gold;
+}
+
+.entry-chevron {
+    -fx-stroke: -text-dim;
+    -fx-stroke-width: 1.8;
+}
+
+.finder-preview {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: transparent transparent transparent -edge-line;
+    -fx-border-width: 0 0 0 1px;
+    -fx-padding: 24px 20px;
+    -fx-spacing: 10px;
+    -fx-alignment: top-center;
+    -fx-pref-width: 250px;
+}
+
+.preview-icon {
+    -fx-stroke: -text-secondary;
+    -fx-stroke-width: 1.2;
+}
+
+.preview-name {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-primary;
+}
+
+.preview-meta {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-dim;
+}
+
+.preview-body {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", "Consolas", monospace;
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -text-secondary;
+    -fx-background-color: -fill-sunken;
+    -fx-background-radius: 8px;
+    -fx-padding: 10px 12px;
+    -fx-min-width: 210px;
+    -fx-line-spacing: 2px;
+}
+
+/* ─────────────────────────── 교착 상태 관리자 ─────────────────────────── */
+
+.deadlock-resolver {
+    -fx-background-color: transparent;
+}
+
+.deadlock-left {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: transparent -edge-line transparent transparent;
+    -fx-border-width: 0 1px 0 0;
+    -fx-padding: 12px;
+    -fx-spacing: 10px;
+    -fx-pref-width: 470px;
+}
+
+.available-chip {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", "Consolas", monospace;
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -accent-text;
+    -fx-background-color: -accent-tint;
+    -fx-background-radius: 8px;
+    -fx-border-color: -accent-border;
+    -fx-border-radius: 8px;
+    -fx-padding: 8px 12px;
+}
+
+.resource-table .table-cell {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", "Consolas", monospace;
+    -fx-font-size: 11.5px;
+}
+
+.request-bar {
+    -fx-border-color: -edge-line transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+    -fx-spacing: 6px;
+}
+
+.request-hint {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: -text-dim;
+    -fx-wrap-text: true;
+    -fx-max-width: 320px;
+}
+
+.policy-box {
+    -fx-pref-width: 168px;
+}
+
+/* ── Wait-For 그래프 ── */
+
+.graph-empty {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -text-dim;
+    -fx-text-alignment: center;
+}
+
+.graph-edge {
+    -fx-stroke: -warn-border;
+    -fx-stroke-width: 1.6;
+}
+
+.graph-arrow {
+    -fx-fill: -molten-gold;
+}
+
+.graph-edge-label {
+    -fx-font-size: 10px;
+    -fx-text-fill: -warn-text;
+    -fx-background-color: -warn-tint;
+    -fx-background-radius: 5px;
+    -fx-padding: 1px 5px;
+}
+
+.graph-node-disc {
+    -fx-stroke-width: 1.2;
+}
+
+.graph-node-label {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: -text-secondary;
+    -fx-text-alignment: center;
+}
+
+.graph-node-halo {
+    -fx-fill: -forge-ember;
+}
+
+/* 교착에 얽힌 노드만 Ember 로 물든다. 다른 노드가 전부 무채색이라 눈이
+   곧바로 여기로 간다 — 사이클을 찾아 헤맬 필요가 없다. */
+.graph-node:deadlocked .graph-node-disc {
+    -fx-stroke: -danger-border;
+    -fx-stroke-width: 1.8;
+}
+
+.graph-node:deadlocked .graph-node-label {
+    -fx-text-fill: -danger-text;
+    -fx-font-weight: bold;
+}

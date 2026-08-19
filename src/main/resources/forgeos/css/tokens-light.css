@@ -1,0 +1,127 @@
+/*
+ * ForgeOS 라이트 테마 토큰.
+ *
+ * tokens-dark.css 와 같은 이름을 같은 개수만큼 정의한다. 하나라도 빠지면 그
+ * 토큰만 해석되지 않아 검은 사각형이 남으므로, 값을 바꿀 때는 반드시 두 파일을
+ * 같이 연다.
+ *
+ * 브랜드 3색은 다크와 값이 같다. 신호등과 로고는 테마가 바뀌어도 같은 물건이다.
+ * 대신 대비가 필요한 자리(-*-text)는 밝은 배경에서 읽히도록 훨씬 어둡게 잡았다.
+ * 밝은 배경 위의 옅은 산호색 글씨는 그냥 안 보인다.
+ */
+
+.root {
+    /* ── 브랜드 (다크와 동일) ── */
+    -forge-ember:        #ff6b4a;
+    -molten-gold:        #ffb627;
+    -electric-cyan:      #22d3ee;
+
+    /* ── 바탕 ── */
+    -forge-bg:           #eef1f6;
+
+    /* 라이트에서도 유리는 유리다. 다만 바탕이 밝으므로 흰색을 얹어 띄운다. */
+    -glass-thin:         rgba(252, 253, 255, 0.72);
+    -glass-regular:      rgba(250, 251, 254, 0.84);
+    -glass-thick:        rgba(253, 254, 255, 0.93);
+    -window-body:        rgba(255, 255, 255, 0.88);
+
+    /* ── 경계 ──
+       윗선은 여전히 흰색이다(빛을 받는 모서리). 구분선만 어두워진다. */
+    -edge-light:         rgba(255, 255, 255, 0.95);
+    -edge-line:          rgba(15, 23, 42, 0.10);
+    -edge-strong:        rgba(15, 23, 42, 0.20);
+
+    /* ── 글자 ── */
+    -text-primary:       #111826;
+    -text-secondary:     #4b5567;
+    -text-dim:           #7b8697;
+
+    /* ── 면 채움 ── */
+    -fill-subtle:        rgba(15, 23, 42, 0.025);
+    -fill-soft:          rgba(15, 23, 42, 0.05);
+    -fill-medium:        rgba(15, 23, 42, 0.075);
+    -fill-strong:        rgba(15, 23, 42, 0.12);
+    -fill-sunken:        rgba(15, 23, 42, 0.05);
+    -thumb-fill:         rgba(15, 23, 42, 0.20);
+    -thumb-fill-hover:   rgba(15, 23, 42, 0.32);
+
+    /* ── 의미색 ── */
+    -accent-tint:        rgba(8, 145, 165, 0.14);
+    -accent-tint-strong: rgba(8, 145, 165, 0.28);
+    -accent-border:      rgba(8, 145, 165, 0.45);
+    -accent-text:        #0a6675;
+
+    -danger-tint:        rgba(214, 62, 32, 0.12);
+    -danger-tint-strong: rgba(214, 62, 32, 0.22);
+    -danger-border:      rgba(214, 62, 32, 0.34);
+    -danger-text:        #99301a;
+
+    -warn-tint:          rgba(202, 130, 0, 0.16);
+    -warn-border:        rgba(202, 130, 0, 0.50);
+    -warn-text:          #7d5300;
+
+    /* ── 그림자. 라이트에서는 아주 옅어야 한다. 다크 그림자를 그대로 쓰면
+           화면이 지저분해지고 카드가 떠 있는 게 아니라 때가 낀 것처럼 보인다. ── */
+    -shadow-menu:        rgba(15, 23, 42, 0.08);
+    -shadow-popup:       rgba(15, 23, 42, 0.16);
+    -shadow-dock:        rgba(15, 23, 42, 0.18);
+    -shadow-window:      rgba(15, 23, 42, 0.10);
+    -shadow-window-active: rgba(15, 23, 42, 0.22);
+
+    /* ── 덮개 ── */
+    -scrim:              rgba(238, 241, 246, 0.90);
+    -veil:               #f4f6fa;
+}
+
+/* ─────────────────────────── 테마별 그라디언트 ─────────────────────────── */
+
+.wallpaper {
+    -fx-background-color:
+        radial-gradient(center 26% 34%, radius 58%, rgba(255, 137, 74, 0.16), transparent),
+        radial-gradient(center 86% 84%, radius 62%, rgba(34, 190, 220, 0.14), transparent),
+        radial-gradient(center 62% 12%, radius 44%, rgba(217, 70, 239, 0.09), transparent),
+        linear-gradient(to bottom right, #f7f9fc 0%, #eaeef5 55%, #dfe5ee 100%);
+}
+
+.wallpaper-glow {
+    -fx-background-color:
+        radial-gradient(center 39% 44%, radius 34%, rgba(255, 138, 40, 0.22), transparent),
+        radial-gradient(center 39% 44%, radius 20%, rgba(217, 70, 239, 0.10), transparent);
+}
+
+.wallpaper-ring {
+    -fx-stroke: rgba(15, 23, 42, 0.055);
+}
+
+/* 밝은 바탕에서는 같은 불투명도가 더 세게 느껴진다. 더 눌러 둔다. */
+.wallpaper-brand {
+    -fx-opacity: 0.34;
+}
+
+.wallpaper-wordmark {
+    -fx-text-fill: rgba(150, 40, 170, 0.85);
+}
+
+.dock-tile {
+    -fx-background-color: linear-gradient(to bottom right,
+        rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.55));
+}
+
+.window-titlebar {
+    -fx-background-color: linear-gradient(to bottom,
+        rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.35));
+}
+
+.graph-node-disc {
+    -fx-fill: linear-gradient(to bottom right, #ffffff, #e8edf5);
+    -fx-stroke: rgba(15, 23, 42, 0.18);
+}
+
+.graph-node:deadlocked .graph-node-disc {
+    -fx-fill: linear-gradient(to bottom right, #ffe7e0, #ffd2c6);
+}
+
+.wait-for-graph {
+    -fx-background-color: radial-gradient(center 50% 42%, radius 62%,
+        rgba(15, 23, 42, 0.030), transparent);
+}
