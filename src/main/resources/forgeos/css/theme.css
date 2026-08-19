@@ -1,0 +1,821 @@
+/*
+ * ForgeOS 구조 스타일 — 부팅 화면 · 바탕화면 · 메뉴바 · Dock · 창 · 공통 컨트롤.
+ *
+ * 규칙 둘.
+ *
+ * 1. 색과 치수는 자바 코드에 두지 않는다. setStyle() 이 등장하는 순간 디자인
+ *    변경은 컴파일이 필요한 일이 되고, 두 곳에 흩어진 값은 반드시 어긋난다.
+ *    자바가 하는 일은 styleClass 와 의사 클래스를 붙였다 떼는 것뿐이다.
+ *
+ * 2. 이 파일에는 리터럴 색을 쓰지 않는다. 전부 tokens-dark.css / tokens-light.css
+ *    가 정의한 이름만 참조한다. 여기에 #1a1a1a 하나를 적는 순간 그 요소만
+ *    라이트 테마에서 검게 남는다. (예외는 부팅 화면과 브랜드 마크 — 아래 주석 참고.)
+ */
+
+/* ─────────────────────────── 기본 ─────────────────────────── */
+
+.root {
+    -fx-font-family: "SF Pro Text", "Apple SD Gothic Neo", "Pretendard",
+                     "Noto Sans KR", "Malgun Gothic", sans-serif;
+    -fx-font-size: 13px;
+    -fx-text-fill: -text-primary;
+    -fx-background-color: -forge-bg;
+    -fx-focus-color: -electric-cyan;
+    -fx-faint-focus-color: -accent-tint;
+}
+
+.forge-root {
+    -fx-background-color: -forge-bg;
+}
+
+/* 아이콘 기본값. 굵기를 한 곳에서 정해야 아이콘들이 같은 붓으로 그린 것처럼 보인다. */
+.glyph {
+    -fx-stroke: -text-secondary;
+    -fx-stroke-width: 1.7;
+    -fx-fill: null;
+}
+
+.glyph-filled {
+    -fx-fill: -text-secondary;
+    -fx-stroke: null;
+}
+
+/* 테마 전환 순간에만 덮이는 막. 명도가 한 프레임에 뒤집히는 것을 완충한다. */
+.theme-veil {
+    -fx-background-color: -veil;
+}
+
+/* ─────────────────────────── 부팅 ─────────────────────────── */
+/*
+ * 부팅 화면은 테마를 따르지 않는 유일한 화면이다. 전원을 넣은 기계의 콘솔은
+ * 라이트 모드라는 것이 없다 — 어느 테마를 쓰든 검은 화면에서 시작해야
+ * "지금 커널이 올라오는 중"으로 읽힌다. 그래서 여기만 리터럴 색을 쓴다.
+ */
+
+.boot-root {
+    -fx-background-color: #000000;
+}
+
+.boot-console {
+    -fx-background-color: #000000;
+    -fx-padding: 44px 56px;
+}
+
+.boot-console-scroll,
+.boot-console-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.boot-console-column {
+    -fx-spacing: 0;
+}
+
+.boot-console-line,
+.boot-console-cursor {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", "Consolas", monospace;
+    -fx-font-size: 13.5px;
+    /* 형광 초록 대신 살짝 청록으로 기울인 회백색 — 터미널 흉내가 아니라 실제 콘솔의 색이다. */
+    -fx-text-fill: #c8d3d8;
+}
+
+.boot-console-cursor {
+    -fx-text-fill: #22d3ee;
+}
+
+.boot-console-cursor-row {
+    -fx-padding: 0;
+}
+
+.boot-video {
+    -fx-background-color: #000000;
+}
+
+/* ─────────────────────────── 바탕화면 ─────────────────────────── */
+/*
+ * 배경화면은 이미지 파일이 아니라 벡터다. assets/forgeOS-logo.svg 의 패스를
+ * ForgeMark 로 다시 세워 그리므로 어떤 해상도에서도 깨지지 않고, 테마에 따라
+ * 밝기가 따라온다. 그라디언트 자체는 테마마다 다르므로 tokens-*.css 에 있다.
+ */
+
+.desktop {
+    -fx-background-color: -forge-bg;
+}
+
+.wallpaper-brand {
+    -fx-alignment: center;
+    -fx-spacing: 24px;
+}
+
+.wallpaper-wordmark {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", "Consolas", monospace;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+.wallpaper-ring {
+    -fx-stroke-width: 1;
+    -fx-fill: null;
+}
+
+/* ── 로고 마크 ──
+   원본 SVG 의 색을 그대로 옮겼다. 브랜드 마크는 테마가 바뀌어도 같은 물건이므로
+   토큰이 아니라 고정색이며, 밝기 조절은 .wallpaper-brand 의 불투명도가 맡는다. */
+
+.mark-base {
+    -fx-fill: #0f172a;
+    -fx-stroke: #334155;
+    -fx-stroke-width: 3;
+}
+
+.mark-body {
+    -fx-fill: #1e293b;
+    -fx-stroke: #334155;
+    -fx-stroke-width: 3;
+}
+
+.mark-steel-left {
+    -fx-fill: linear-gradient(to bottom right, #334155, #1e293b);
+    -fx-stroke: #475569;
+    -fx-stroke-width: 3;
+}
+
+.mark-steel-right {
+    -fx-fill: linear-gradient(to bottom right, #475569, #334155);
+    -fx-stroke: #64748b;
+    -fx-stroke-width: 3;
+}
+
+.mark-steel-top {
+    -fx-fill: linear-gradient(to bottom right, #64748b, #475569);
+    -fx-stroke: #94a3b8;
+    -fx-stroke-width: 3;
+}
+
+.mark-circuit {
+    -fx-stroke: #ff6b00;
+    -fx-stroke-width: 3.5;
+}
+
+.mark-circuit-node {
+    -fx-fill: #ffc400;
+}
+
+.mark-window-back {
+    -fx-stroke: #8b5cf6;
+    -fx-stroke-width: 3;
+    -fx-opacity: 0.6;
+}
+
+.mark-window-front {
+    -fx-stroke: #d946ef;
+    -fx-stroke-width: 4;
+    -fx-opacity: 0.9;
+}
+
+/* 로고 안의 작은 신호등. ForgeOS 의 창 제어 버튼과 같은 순서·같은 뜻이다. */
+.mark-dot-close {
+    -fx-fill: #ff5f56;
+}
+
+.mark-dot-minimize {
+    -fx-fill: #ffbd2e;
+}
+
+.mark-dot-zoom {
+    -fx-fill: #27c93f;
+}
+
+/* 불꽃의 발광. SVG 의 feGaussianBlur 를 dropshadow 로 대신한다 —
+   JavaFX CSS 의 효과 함수는 그림자 계열뿐이지만, 색을 밝게 주면 발광이 된다. */
+.mark-flame {
+    -fx-fill: linear-gradient(from 0% 100% to 100% 0%,
+        #ff2a00 0%, #ff7700 50%, #ffc400 90%, #fff5d6 100%);
+    -fx-stroke: null;
+    -fx-effect: dropshadow(gaussian, rgba(255, 106, 0, 0.85), 64, 0.35, 0, 0);
+}
+
+.mark-flame-core {
+    -fx-fill: rgba(255, 255, 255, 0.95);
+    -fx-stroke: null;
+}
+
+.mark-spark-gold {
+    -fx-fill: #ffc400;
+}
+
+.mark-spark-violet {
+    -fx-fill: #d946ef;
+}
+
+.mark-spark-white {
+    -fx-fill: #ffffff;
+}
+
+.mark-glow-ember {
+    -fx-fill: rgba(255, 85, 0, 0.34);
+}
+
+.mark-glow-violet {
+    -fx-fill: rgba(217, 70, 239, 0.26);
+}
+
+/* ─────────────────────────── 메뉴바 ─────────────────────────── */
+
+.menu-bar {
+    /* HBox 는 기본적으로 자식을 세로로 꽉 늘린다. 그대로 두면 배경이 있는 칩과
+       메뉴 버튼이 바 높이 전체를 차지해 답답해진다. 자연스러운 높이로 두고 가운데 정렬. */
+    -fx-fill-height: false;
+    -fx-background-color: -glass-thin;
+    -fx-border-color: transparent transparent -edge-line transparent;
+    -fx-border-width: 0 0 1px 0;
+    -fx-padding: 0 14px;
+    -fx-spacing: 12px;
+    -fx-alignment: center-left;
+    -fx-min-height: 30px;
+    -fx-pref-height: 30px;
+    -fx-effect: dropshadow(gaussian, -shadow-menu, 18, 0, 0, 4);
+}
+
+.menu-logo {
+    -fx-stroke: -forge-ember;
+    -fx-stroke-width: 1.6;
+}
+
+.menu-active-app {
+    -fx-font-size: 12.5px;
+    -fx-font-weight: bold;
+}
+
+.menu-chip {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -text-secondary;
+    -fx-background-color: -fill-soft;
+    -fx-background-radius: 6px;
+    -fx-padding: 2px 8px;
+}
+
+.menu-clock {
+    -fx-font-size: 12px;
+    -fx-text-fill: -text-primary;
+    -fx-padding: 0 2px;
+}
+
+.menu-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12.5px;
+    -fx-padding: 2px 6px;
+}
+
+.menu-button:hover {
+    -fx-background-color: -fill-medium;
+    -fx-background-radius: 5px;
+}
+
+.menu-button > .arrow-button {
+    -fx-padding: 0;
+}
+
+.menu-button > .arrow-button > .arrow {
+    -fx-background-color: -text-dim;
+    -fx-padding: 2px 3px;
+}
+
+/* 테마 토글처럼 아이콘 하나만 있는 버튼. */
+.menu-icon-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 6px;
+    -fx-padding: 3px 6px;
+    -fx-cursor: hand;
+}
+
+.menu-icon-button:hover {
+    -fx-background-color: -fill-medium;
+}
+
+.menu-icon-glyph {
+    -fx-stroke: -text-secondary;
+    -fx-stroke-width: 1.7;
+}
+
+.menu-icon-button:hover .menu-icon-glyph {
+    -fx-stroke: -molten-gold;
+}
+
+.context-menu {
+    -fx-background-color: -glass-thick;
+    -fx-background-radius: 10px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 10px;
+    -fx-padding: 5px;
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 26, 0, 0, 10);
+}
+
+.menu-item {
+    -fx-background-radius: 6px;
+    -fx-padding: 5px 12px;
+}
+
+.menu-item .label {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12.5px;
+}
+
+.menu-item:focused {
+    -fx-background-color: -accent-tint-strong;
+}
+
+/* ─────────────────────────── Dock ─────────────────────────── */
+
+.dock {
+    -fx-fill-height: false;
+    -fx-background-color: -glass-regular;
+    -fx-background-radius: 22px;
+    -fx-border-color: -edge-light;
+    -fx-border-radius: 22px;
+    -fx-border-width: 1px;
+    /* 아이콘 사이 간격. 좁으면 하나를 겨냥하다 옆을 누르게 된다. */
+    -fx-padding: 10px 18px;
+    -fx-spacing: 20px;
+    -fx-alignment: bottom-center;
+    /* 큰 표면일수록 그림자가 깊어야 유리처럼 떠 보인다. */
+    -fx-effect: dropshadow(gaussian, -shadow-dock, 42, 0, 0, 14);
+}
+
+.dock-item {
+    -fx-cursor: hand;
+}
+
+.dock-item-column {
+    -fx-alignment: bottom-center;
+    -fx-spacing: 4px;
+}
+
+.dock-tile {
+    -fx-min-width: 46px;
+    -fx-min-height: 46px;
+    -fx-pref-width: 46px;
+    -fx-pref-height: 46px;
+    -fx-background-radius: 13px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 13px;
+}
+
+.dock-item:hover .dock-glyph {
+    -fx-stroke: -text-primary;
+}
+
+.dock-item:running .dock-tile {
+    -fx-border-color: -accent-border;
+}
+
+.dock-item:running .dock-glyph {
+    -fx-stroke: -electric-cyan;
+}
+
+.dock-glyph {
+    -fx-stroke: -text-secondary;
+    -fx-stroke-width: 1.8;
+}
+
+.dock-running-dot {
+    -fx-fill: -electric-cyan;
+}
+
+/*
+ * 가리킨 앱의 이름표. Dock 바깥(위)에 떠서 바탕화면이나 창 위에 얹히므로,
+ * 가장 불투명한 유리와 또렷한 그림자를 써야 어떤 배경에서도 읽힌다.
+ */
+.dock-name {
+    -fx-background-color: -glass-thick;
+    -fx-background-radius: 8px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 8px;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-padding: 4px 11px;
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 18, 0, 0, 6);
+}
+
+/* ─────────────────────────── 창 ─────────────────────────── */
+
+.window-layer {
+    -fx-background-color: transparent;
+}
+
+.forge-window {
+    -fx-background-color: -glass-thick;
+    -fx-background-radius: 12px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+    /* 비활성 창의 그림자는 얕다. 깊이가 곧 "지금 이것을 보고 있다"는 신호다. */
+    -fx-effect: dropshadow(gaussian, -shadow-window, 26, 0, 0, 10);
+}
+
+.forge-window:active {
+    -fx-border-color: -edge-strong;
+    -fx-effect: dropshadow(gaussian, -shadow-window-active, 54, 0, 0, 22);
+}
+
+.window-titlebar {
+    -fx-fill-height: false;
+    -fx-background-radius: 12px 12px 0 0;
+    -fx-border-color: transparent transparent -edge-line transparent;
+    -fx-border-width: 0 0 1px 0;
+    -fx-padding: 0 12px;
+    -fx-spacing: 8px;
+    -fx-alignment: center-left;
+    -fx-min-height: 38px;
+    -fx-pref-height: 38px;
+    -fx-cursor: default;
+}
+
+.window-title {
+    -fx-font-size: 12.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-secondary;
+}
+
+.forge-window:active .window-title {
+    -fx-text-fill: -text-primary;
+}
+
+/* 신호등 폭(3 × 13 + 2 × 8 여백)만큼 오른쪽을 비워 제목을 진짜 가운데로 보낸다. */
+.titlebar-balance {
+    -fx-min-width: 55px;
+    -fx-pref-width: 55px;
+}
+
+.window-content {
+    -fx-background-color: -window-body;
+    -fx-background-radius: 0 0 12px 12px;
+}
+
+/* ─────────────────────────── 신호등 ─────────────────────────── */
+
+.traffic-lights {
+    -fx-fill-height: false;
+    -fx-spacing: 8px;
+    -fx-alignment: center-left;
+    -fx-padding: 0 4px 0 0;
+}
+
+.light {
+    -fx-cursor: hand;
+}
+
+.light-disc {
+    -fx-stroke: rgba(0, 0, 0, 0.22);
+    -fx-stroke-width: 0.5;
+}
+
+.light-close {
+    -fx-fill: -forge-ember;
+}
+
+.light-minimize {
+    -fx-fill: -molten-gold;
+}
+
+.light-zoom {
+    -fx-fill: -electric-cyan;
+}
+
+.light-glyph {
+    -fx-stroke: rgba(0, 0, 0, 0.62);
+    -fx-stroke-width: 1.6;
+}
+
+/* 비활성 창의 신호등은 회색이다 — 어느 창이 살아 있는지 색만으로 알 수 있다. */
+.forge-window .light-disc {
+    -fx-fill: -fill-strong;
+}
+
+.forge-window:active .light-close {
+    -fx-fill: -forge-ember;
+}
+
+.forge-window:active .light-minimize {
+    -fx-fill: -molten-gold;
+}
+
+.forge-window:active .light-zoom {
+    -fx-fill: -electric-cyan;
+}
+
+/* ─────────────────────────── 공통 컨트롤 ─────────────────────────── */
+
+.toolbar {
+    -fx-fill-height: false;
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: transparent transparent -edge-line transparent;
+    -fx-border-width: 0 0 1px 0;
+    -fx-padding: 8px 12px;
+    -fx-spacing: 8px;
+}
+
+.toolbar-caption,
+.toolbar .label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+}
+
+.toolbar-status {
+    -fx-text-fill: -text-dim;
+    -fx-font-size: 11.5px;
+}
+
+.toolbar-button {
+    -fx-background-color: -fill-medium;
+    -fx-background-radius: 7px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 7px;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-padding: 5px 11px;
+    -fx-cursor: hand;
+    -fx-graphic-text-gap: 6px;
+}
+
+.toolbar-button:hover {
+    -fx-background-color: -fill-strong;
+}
+
+.toolbar-button:pressed {
+    -fx-background-color: -fill-soft;
+}
+
+.toolbar-button:disabled {
+    -fx-opacity: 0.38;
+}
+
+/* 되돌릴 수 없는 동작. 색으로 미리 경고하되, 확인 대화상자까지 띄우지는 않는다 —
+   시뮬레이터에서 프로세스를 죽이는 것은 되돌릴 수 없지만 치명적이지도 않다. */
+.toolbar-button:danger {
+    -fx-background-color: -danger-tint;
+    -fx-border-color: -danger-border;
+    -fx-text-fill: -danger-text;
+}
+
+.toolbar-button:danger:hover {
+    -fx-background-color: -danger-tint-strong;
+}
+
+.button-glyph {
+    -fx-stroke: -text-secondary;
+    -fx-stroke-width: 1.8;
+}
+
+.field {
+    -fx-background-color: -fill-sunken;
+    -fx-background-radius: 7px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 7px;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-dim;
+    -fx-font-size: 12px;
+    -fx-padding: 5px 9px;
+    -fx-pref-width: 130px;
+}
+
+.field:focused {
+    -fx-border-color: -accent-border;
+}
+
+.field-narrow {
+    -fx-pref-width: 62px;
+}
+
+/* ── 표 ── */
+
+.table-view {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-table-cell-border-color: transparent;
+    -fx-padding: 0;
+    -fx-fixed-cell-size: 34px;
+}
+
+.table-view > .virtual-flow > .clipped-container > .sheet > .table-row-cell {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -edge-line transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.table-view > .virtual-flow > .clipped-container > .sheet > .table-row-cell:odd {
+    -fx-background-color: -fill-subtle;
+}
+
+.table-view > .virtual-flow > .clipped-container > .sheet > .table-row-cell:selected {
+    -fx-background-color: -accent-tint;
+}
+
+.table-view .table-cell {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-padding: 0 10px;
+    -fx-alignment: center-left;
+}
+
+.table-view .column-numeric {
+    -fx-alignment: center-right;
+}
+
+.table-view .column-header,
+.table-view .column-header-background,
+.table-view .column-header-background .filler {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -edge-line transparent;
+    -fx-border-width: 0 0 1px 0;
+    -fx-size: 30px;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: -text-dim;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-alignment: center-left;
+    -fx-padding: 0 10px;
+}
+
+.table-view .placeholder .label {
+    -fx-text-fill: -text-dim;
+    -fx-font-size: 12px;
+    -fx-text-alignment: center;
+}
+
+/* ── 목록 ── */
+
+.list-view {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 4px;
+}
+
+.list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text-primary;
+    -fx-padding: 0;
+    -fx-background-radius: 7px;
+}
+
+.list-cell:filled:hover {
+    -fx-background-color: -fill-medium;
+}
+
+.list-cell:filled:selected {
+    -fx-background-color: -accent-tint;
+}
+
+/* ── 스크롤 ── */
+
+.scroll-pane,
+.scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar {
+    -fx-background-color: transparent;
+    -fx-padding: 2px;
+}
+
+.scroll-bar .track {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: -thumb-fill;
+    -fx-background-radius: 6px;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: -thumb-fill-hover;
+}
+
+.scroll-bar > .increment-button,
+.scroll-bar > .decrement-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+    -fx-pref-width: 0;
+    -fx-pref-height: 0;
+}
+
+.scroll-bar > .increment-button > .increment-arrow,
+.scroll-bar > .decrement-button > .decrement-arrow {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
+/* ── 콤보 박스 ── */
+
+.combo-box {
+    -fx-background-color: -fill-medium;
+    -fx-background-radius: 7px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 7px;
+    -fx-padding: 1px 2px;
+}
+
+.combo-box .list-cell {
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-padding: 4px 8px;
+}
+
+.combo-box > .arrow-button > .arrow {
+    -fx-background-color: -text-dim;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: -glass-thick;
+    -fx-background-radius: 9px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 9px;
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 24, 0, 0, 8);
+}
+
+/* ── 툴팁 ── */
+
+.tooltip {
+    -fx-background-color: -glass-thick;
+    -fx-background-radius: 7px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 7px;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 11.5px;
+    -fx-padding: 5px 9px;
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 16, 0, 0, 5);
+}
+
+/* ── 토글 스위치 ── */
+
+.toggle-switch {
+    -fx-cursor: hand;
+}
+
+.toggle-track {
+    -fx-background-color: -fill-strong;
+    -fx-background-radius: 13px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 13px;
+}
+
+.toggle-switch:on .toggle-track {
+    -fx-background-color: -accent-tint-strong;
+    -fx-border-color: -accent-border;
+}
+
+.toggle-thumb {
+    -fx-fill: #f7f9fc;
+    -fx-stroke: rgba(0, 0, 0, 0.12);
+    -fx-stroke-width: 0.5;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 6, 0, 0, 1);
+}
+
+/* ─────────────────────────── 종료 오버레이 ─────────────────────────── */
+
+.shutdown-overlay {
+    -fx-background-color: -scrim;
+}
+
+.shutdown-column {
+    -fx-spacing: 14px;
+    -fx-max-width: 420px;
+    -fx-max-height: 260px;
+    -fx-background-color: -glass-thick;
+    -fx-background-radius: 16px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 16px;
+    -fx-padding: 32px 36px;
+    -fx-effect: dropshadow(gaussian, -shadow-window-active, 40, 0, 0, 16);
+}
+
+.shutdown-title {
+    -fx-font-size: 19px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-primary;
+}
+
+.shutdown-detail {
+    -fx-font-size: 12.5px;
+    -fx-text-fill: -text-secondary;
+    -fx-text-alignment: center;
+    -fx-line-spacing: 3px;
+}
+
+.shutdown-button {
+    -fx-background-color: -danger-tint;
+    -fx-background-radius: 8px;
+    -fx-border-color: -danger-border;
+    -fx-border-radius: 8px;
+    -fx-text-fill: -danger-text;
+    -fx-font-size: 12.5px;
+    -fx-padding: 7px 18px;
+    -fx-cursor: hand;
+}
+
+.shutdown-button:hover {
+    -fx-background-color: -danger-tint-strong;
+}
