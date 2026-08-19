@@ -1,0 +1,135 @@
+/*
+ * ForgeOS 다크 테마 토큰.
+ *
+ * 이 파일에는 <b>색만</b> 있다. 구조와 치수는 theme.css / apps.css 가 갖고,
+ * 그쪽은 리터럴 색을 쓰지 않고 여기 이름만 참조한다. 테마를 바꾼다는 것은
+ * 이 파일을 tokens-light.css 로 통째로 교체한다는 뜻이다(ThemeManager 참고).
+ *
+ * 팝업(콘텍스트 메뉴·툴팁·콤보 목록)은 자기 Scene 을 갖지만 소유 Scene 의
+ * 스타일시트를 물려받는다. 루트에 클래스를 붙이는 방식 대신 파일을 갈아 끼우는
+ * 이유가 이것이다 — 이렇게 해야 팝업까지 같이 따라온다.
+ *
+ * 브랜드 3색(Ember / Gold / Cyan)은 두 테마에서 값이 같다. 신호등과 로고는
+ * 테마와 무관하게 같은 물건이어야 하기 때문이다. 대비 조정이 필요한 곳은
+ * -*-text / -*-tint 계열 토큰이 따로 맡는다.
+ */
+
+.root {
+    /* ── 브랜드 ── */
+    -forge-ember:        #ff6b4a;
+    -molten-gold:        #ffb627;
+    -electric-cyan:      #22d3ee;
+
+    /* ── 바탕 ── */
+    -forge-bg:           #06080b;
+
+    /* 유리 재질. JavaFX 에는 backdrop-filter 가 없으므로 반투명 + 밝은 윗선 +
+       그림자로 두께를 만든다. 큰 표면일수록 더 불투명하고 그림자가 깊다. */
+    -glass-thin:         rgba(24, 28, 35, 0.62);
+    -glass-regular:      rgba(20, 24, 30, 0.80);
+    -glass-thick:        rgba(16, 19, 25, 0.90);
+    -window-body:        rgba(9, 11, 15, 0.82);
+
+    /* ── 경계 ── */
+    -edge-light:         rgba(255, 255, 255, 0.14);
+    -edge-line:          rgba(255, 255, 255, 0.07);
+    -edge-strong:        rgba(255, 255, 255, 0.20);
+
+    /* ── 글자 ── */
+    -text-primary:       #eceff4;
+    -text-secondary:     #9aa5b4;
+    -text-dim:           #6a7383;
+
+    /* ── 면 채움. 다크에서는 흰색을 얹고, 라이트에서는 검정을 얹는다. ── */
+    -fill-subtle:        rgba(255, 255, 255, 0.025);
+    -fill-soft:          rgba(255, 255, 255, 0.05);
+    -fill-medium:        rgba(255, 255, 255, 0.08);
+    -fill-strong:        rgba(255, 255, 255, 0.13);
+    -fill-sunken:        rgba(0, 0, 0, 0.32);
+    -thumb-fill:         rgba(255, 255, 255, 0.16);
+    -thumb-fill-hover:   rgba(255, 255, 255, 0.28);
+
+    /* ── 의미색 ── */
+    -accent-tint:        rgba(34, 211, 238, 0.16);
+    -accent-tint-strong: rgba(34, 211, 238, 0.34);
+    -accent-border:      rgba(34, 211, 238, 0.45);
+    -accent-text:        #8be9f5;
+
+    -danger-tint:        rgba(255, 107, 74, 0.16);
+    -danger-tint-strong: rgba(255, 107, 74, 0.28);
+    -danger-border:      rgba(255, 107, 74, 0.36);
+    -danger-text:        #ffb3a0;
+
+    -warn-tint:          rgba(255, 182, 39, 0.18);
+    -warn-border:        rgba(255, 182, 39, 0.55);
+    -warn-text:          #ffd58a;
+
+    /* ── 그림자. 라이트에서도 그림자는 검정이지만 훨씬 옅다. ── */
+    -shadow-menu:        rgba(0, 0, 0, 0.35);
+    -shadow-popup:       rgba(0, 0, 0, 0.55);
+    -shadow-dock:        rgba(0, 0, 0, 0.62);
+    -shadow-window:      rgba(0, 0, 0, 0.45);
+    -shadow-window-active: rgba(0, 0, 0, 0.70);
+
+    /* ── 덮개 ── */
+    -scrim:              rgba(4, 6, 9, 0.88);
+    -veil:               #05070a;
+}
+
+/* ─────────────────────────── 테마별 그라디언트 ─────────────────────────── */
+/*
+ * 그라디언트는 looked-up color 로 뺄 수 없다(토큰은 단색만 담는다).
+ * 그래서 배경화면처럼 테마마다 그림이 달라지는 규칙은 토큰 파일이 직접 갖는다.
+ */
+
+.wallpaper {
+    -fx-background-color:
+        radial-gradient(center 26% 34%, radius 58%, rgba(255, 107, 74, 0.14), transparent),
+        radial-gradient(center 86% 84%, radius 62%, rgba(34, 211, 238, 0.12), transparent),
+        radial-gradient(center 62% 12%, radius 44%, rgba(217, 70, 239, 0.10), transparent),
+        linear-gradient(to bottom right, #0d121b 0%, #080b12 52%, #04060a 100%);
+}
+
+/* 마크 뒤의 불빛. 로고의 불꽃이 실제로 주변을 밝히는 것처럼 보이게 한다. */
+.wallpaper-glow {
+    -fx-background-color:
+        radial-gradient(center 39% 44%, radius 34%, rgba(255, 106, 0, 0.20), transparent),
+        radial-gradient(center 39% 44%, radius 20%, rgba(217, 70, 239, 0.12), transparent);
+}
+
+.wallpaper-ring {
+    -fx-stroke: rgba(255, 255, 255, 0.045);
+}
+
+/* 배경화면이 창을 방해하면 안 된다. 또렷하게 그리되 전체를 눌러 둔다. */
+.wallpaper-brand {
+    -fx-opacity: 0.5;
+}
+
+.wallpaper-wordmark {
+    -fx-text-fill: rgba(217, 70, 239, 0.75);
+}
+
+.dock-tile {
+    -fx-background-color: linear-gradient(to bottom right,
+        rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.03));
+}
+
+.window-titlebar {
+    -fx-background-color: linear-gradient(to bottom,
+        rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+}
+
+.graph-node-disc {
+    -fx-fill: linear-gradient(to bottom right, #1b212b, #10141b);
+    -fx-stroke: rgba(255, 255, 255, 0.16);
+}
+
+.graph-node:deadlocked .graph-node-disc {
+    -fx-fill: linear-gradient(to bottom right, #3a1a14, #24100c);
+}
+
+.wait-for-graph {
+    -fx-background-color: radial-gradient(center 50% 42%, radius 62%,
+        rgba(255, 255, 255, 0.035), transparent);
+}

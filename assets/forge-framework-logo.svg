@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <radialGradient id="fwIconBg" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#141923" />
+      <stop offset="70%" stop-color="#0B0E14" />
+      <stop offset="100%" stop-color="#05070A" />
+    </radialGradient>
+
+    <linearGradient id="fwIconFire" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF2A00" />
+      <stop offset="50%" stop-color="#FF7700" />
+      <stop offset="90%" stop-color="#FFC400" />
+      <stop offset="100%" stop-color="#FFF5D6" />
+    </linearGradient>
+
+    <linearGradient id="fwIconSteelLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+    
+    <linearGradient id="fwIconSteelRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#475569" />
+      <stop offset="100%" stop-color="#334155" />
+    </linearGradient>
+
+    <linearGradient id="fwIconSteelTop" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#64748B" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+
+    <filter id="fwIconGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16" result="blur1" />
+      <feGaussianBlur stdDeviation="32" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="fwIconSubtle" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect width="512" height="512" rx="112" fill="url(#fwIconBg)" stroke="#334155" stroke-width="3" />
+
+  <!-- Core Ambient Glow -->
+  <circle cx="256" cy="245" r="130" fill="#FF5500" opacity="0.2" filter="url(#fwIconGlow)" />
+
+  <!-- Anvil Base & Footing -->
+  <g transform="translate(0, 0)">
+    <path d="M 120 370 L 392 370 L 420 415 L 92 415 Z" fill="#0F172A" stroke="#334155" stroke-width="3" />
+    <path d="M 190 280 L 322 280 L 340 370 L 172 370 Z" fill="#1E293B" stroke="#334155" stroke-width="3" />
+
+    <!-- Left Anvil Body / Horn -->
+    <path d="M 80 180 L 256 180 L 256 280 L 150 280 L 60 205 Z" fill="url(#fwIconSteelLeft)" stroke="#475569" stroke-width="3" />
+
+    <!-- Right Anvil Body / Heel -->
+    <path d="M 256 180 L 432 180 L 452 225 L 372 280 L 256 280 Z" fill="url(#fwIconSteelRight)" stroke="#64748B" stroke-width="3" />
+
+    <!-- Top Working Surface -->
+    <polygon points="80,180 150,135 452,135 432,180" fill="url(#fwIconSteelTop)" stroke="#94A3B8" stroke-width="3" />
+
+    <!-- Neon Engraved Kernel Circuits -->
+    <g stroke="#FF6B00" stroke-width="3.5" stroke-linecap="round" fill="none" opacity="0.9" filter="url(#fwIconSubtle)">
+      <path d="M 105 210 L 150 240 L 205 240" />
+      <circle cx="205" cy="240" r="4.5" fill="#FFC400" />
+    </g>
+
+    <g stroke="#00F0FF" stroke-width="3.5" stroke-linecap="round" fill="none" opacity="0.9" filter="url(#fwIconSubtle)">
+      <path d="M 405 210 L 360 240 L 305 240" />
+      <circle cx="305" cy="240" r="4.5" fill="#00F0FF" />
+    </g>
+
+    <!-- Molten Fire Core -->
+    <g filter="url(#fwIconGlow)">
+      <path d="M 256 60 C 295 110, 340 150, 315 220 C 290 190, 275 205, 256 225 C 237 205, 222 190, 197 220 C 172 150, 217 110, 256 60 Z" fill="url(#fwIconFire)" />
+      <path d="M 256 115 C 275 150, 295 170, 282 205 C 268 192, 256 200, 256 210 C 256 200, 244 192, 230 205 C 217 170, 237 150, 256 115 Z" fill="#FFFFFF" opacity="0.95" />
+    </g>
+
+    <!-- Sparks -->
+    <circle cx="215" cy="70" r="4" fill="#FFC400" filter="url(#fwIconSubtle)" />
+    <circle cx="295" cy="50" r="4.5" fill="#FF7700" filter="url(#fwIconSubtle)" />
+    <circle cx="260" cy="25" r="3.5" fill="#FFFFFF" filter="url(#fwIconSubtle)" />
+  </g>
+
+  <!-- Bottom Mini Label -->
+  <text x="256" y="465" font-family="-apple-system, BlinkMacSystemFont, 'JetBrains Mono', 'SF Mono', monospace" font-weight="800" font-size="16" letter-spacing="4" fill="#64748B" text-anchor="middle">
+    KERNEL ENGINE
+  </text>
+</svg>

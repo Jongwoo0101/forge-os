@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <radialGradient id="osIconBg" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#141923" />
+      <stop offset="70%" stop-color="#0B0E14" />
+      <stop offset="100%" stop-color="#05070A" />
+    </radialGradient>
+
+    <linearGradient id="osIconFire" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF2A00" />
+      <stop offset="50%" stop-color="#FF7700" />
+      <stop offset="90%" stop-color="#FFC400" />
+      <stop offset="100%" stop-color="#FFF5D6" />
+    </linearGradient>
+
+    <linearGradient id="osIconSteelLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+    
+    <linearGradient id="osIconSteelRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#475569" />
+      <stop offset="100%" stop-color="#334155" />
+    </linearGradient>
+
+    <linearGradient id="osIconSteelTop" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#64748B" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+
+    <filter id="osIconGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16" result="blur1" />
+      <feGaussianBlur stdDeviation="32" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="osIconSubtle" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#osIconBg)" stroke="#334155" stroke-width="3" />
+
+  <circle cx="256" cy="245" r="130" fill="#FF5500" opacity="0.2" filter="url(#osIconGlow)" />
+  <circle cx="256" cy="245" r="70" fill="#D946EF" opacity="0.15" filter="url(#osIconGlow)" />
+
+  <g transform="translate(0, 0)">
+    <path d="M 120 370 L 392 370 L 420 415 L 92 415 Z" fill="#0F172A" stroke="#334155" stroke-width="3" />
+    <path d="M 190 280 L 322 280 L 340 370 L 172 370 Z" fill="#1E293B" stroke="#334155" stroke-width="3" />
+
+    <path d="M 80 180 L 256 180 L 256 280 L 150 280 L 60 205 Z" fill="url(#osIconSteelLeft)" stroke="#475569" stroke-width="3" />
+
+    <path d="M 256 180 L 432 180 L 452 225 L 372 280 L 256 280 Z" fill="url(#osIconSteelRight)" stroke="#64748B" stroke-width="3" />
+
+    <polygon points="80,180 150,135 452,135 432,180" fill="url(#osIconSteelTop)" stroke="#94A3B8" stroke-width="3" />
+
+    <g stroke="#FF6B00" stroke-width="3.5" stroke-linecap="round" fill="none" opacity="0.9" filter="url(#osIconSubtle)">
+      <path d="M 105 210 L 150 240 L 205 240" />
+      <circle cx="205" cy="240" r="4.5" fill="#FFC400" />
+    </g>
+
+    <g stroke-linecap="round" stroke-linejoin="round" fill="none" filter="url(#osIconSubtle)">
+      <path d="M 330 200 L 380 200 L 360 225 L 310 225 Z" stroke="#8B5CF6" stroke-width="3" opacity="0.6"/>
+      <path d="M 290 225 L 340 225 L 320 250 L 270 250 Z" stroke="#D946EF" stroke-width="4" opacity="0.9"/>
+      <circle cx="282" cy="235" r="3" fill="#FF5F56" stroke="none" />
+      <circle cx="292" cy="235" r="3" fill="#FFBD2E" stroke="none" />
+      <circle cx="302" cy="235" r="3" fill="#27C93F" stroke="none" />
+    </g>
+
+    <g filter="url(#osIconGlow)">
+      <path d="M 256 60 C 295 110, 340 150, 315 220 C 290 190, 275 205, 256 225 C 237 205, 222 190, 197 220 C 172 150, 217 110, 256 60 Z" fill="url(#osIconFire)" />
+      <path d="M 256 115 C 275 150, 295 170, 282 205 C 268 192, 256 200, 256 210 C 256 200, 244 192, 230 205 C 217 170, 237 150, 256 115 Z" fill="#FFFFFF" opacity="0.95" />
+    </g>
+
+    <circle cx="215" cy="70" r="4" fill="#FFC400" filter="url(#osIconSubtle)" />
+    <circle cx="295" cy="50" r="4.5" fill="#D946EF" filter="url(#osIconSubtle)" />
+    <circle cx="260" cy="25" r="3.5" fill="#FFFFFF" filter="url(#osIconSubtle)" />
+  </g>
+
+  <text x="256" y="465" font-family="-apple-system, BlinkMacSystemFont, 'JetBrains Mono', 'SF Mono', monospace" font-weight="800" font-size="16" letter-spacing="4" fill="#D946EF" text-anchor="middle">
+    GRAPHICAL OS
+  </text>
+</svg>

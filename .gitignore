@@ -1,0 +1,44 @@
+# ===== Build output =====
+out/
+bin/
+build/
+**/build/
+target/
+*.class
+
+# ===== Gradle =====
+.gradle/
+
+# ===== IDE =====
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+.factorypath
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Logs =====
+*.log
+
+# ===== Packaging =====
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# ===== JVM 크래시 덤프 =====
+hs_err_pid*.log
+replay_pid*.log
+
+# ===== Misc =====
+*.tmp
+*.bak
+
+# Cowork 세션이 로컬 파일을 지울 수 없어 대신 옮겨 두는 곳.
+_to_delete/
+/SKILL.MD
