@@ -3,6 +3,7 @@ package forgeos.app.finder;
 import forgeframework.filesystem.DirectoryEntryDto;
 import forgeframework.filesystem.FileContentDto;
 import forgeframework.filesystem.FileListDto;
+import forgeframework.filesystem.SyncResultDto;
 import forgeframework.syscall.SystemCallResult;
 import forgeframework.syscall.SystemCallType;
 import forgeos.app.AppContext;
@@ -90,10 +91,16 @@ final class FinderView extends BorderPane {
         refresh.getStyleClass().add("toolbar-button");
         refresh.setOnAction(e -> reloadLastColumn());
 
+        // 1.1.0 의 disk.img. 여기까지 눌러야 파일이 재부팅을 견딘다는 사실을
+        // 명령어 없이 알 수 있는 자리다.
+        Button sync = new Button("디스크에 기록", Glyphs.stroked(Glyphs.DISK, 14, "button-glyph"));
+        sync.getStyleClass().add("toolbar-button");
+        sync.setOnAction(e -> syncDisk());
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        HBox bar = new HBox(pathLabel, spacer, newFolder, newFile, refresh);
+        HBox bar = new HBox(pathLabel, spacer, newFolder, newFile, refresh, sync);
         bar.getStyleClass().add("toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
         return bar;
@@ -215,6 +222,30 @@ final class FinderView extends BorderPane {
         } else {
             pathLabel.setText(result.getMessage());
         }
+    }
+
+    // ────────────────────────────── 영속화 ──────────────────────────────
+
+    /**
+     * 파일 시스템을 {@code disk.img} 에 내려쓴다.
+     *
+     * <p>커널을 {@code --disk} 없이 띄웠으면 이미지가 없다. 그 경우를 실패로
+     * 보고하지 않는 이유는, 이미지가 없는 것이 오류가 아니라 기본 설정이기
+     * 때문이다({@code diskImagePath} 기본값 null). 대신 무엇을 해야 영속되는지를 말해 준다.</p>
+     */
+    private void syncDisk() {
+        SystemCallResult result = kernelService.call(SystemCallType.SYNC);
+        if (!result.isSuccess()) {
+            pathLabel.setText(result.getMessage());
+            return;
+        }
+        SyncResultDto sync = result.dataAs(SyncResultDto.class);
+        pathLabel.setText(sync.persisted()
+                ? "%s · %d바이트 · 블록 %d/%d · inode %d/%d".formatted(
+                        sync.imagePath(), sync.bytesWritten(),
+                        sync.usedBlocks(), sync.totalBlocks(),
+                        sync.usedInodes(), sync.totalInodes())
+                : "디스크 이미지가 없어 메모리에만 남습니다 (커널을 --disk 로 띄우면 영속됩니다)");
     }
 
     // ────────────────────────────── 보조 ──────────────────────────────
