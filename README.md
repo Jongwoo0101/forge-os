@@ -148,7 +148,7 @@ JavaFX 애플리케이션은 모듈 경로에 플랫폼별 런타임이 필요�
 jlink 이미지는 **크로스 컴파일이 되지 않습니다.** macOS에서 돌리면 `.dmg`만, Windows에서
 돌리면 `.msi`만 나옵니다. 세 플랫폼을 한 번에 굽는 것은 `.github/workflows/release.yml`이
 GitHub Actions에서 합니다 — `v*` 태그를 밀면 네 러너(mac arm64 · mac x64 · win · linux)가
-각자 구워 드래프트 릴리즈에 붙입니다.
+각자 구워 릴리즈에 붙이고, 본문은 `docs/RELEASE_NOTES_*.md` 전문으로 채웁니다.
 
 > `javafx.web`(WebKit)이 들어 있어 산출물이 **300MB 안팎**으로 큽니다. 브라우저 앱을
 > 넣기로 한 순간 감수하기로 한 비용입니다.

@@ -137,9 +137,16 @@ jobs:
     steps:
       # 태그는 v1.1.0 이지만 문서 파일명은 RELEASE_NOTES_1.1.0.md 다. 앞의 v 를 떼어
       # 두지 않으면 릴리즈 본문의 링크가 없는 파일을 가리킨다.
+      # 태그는 v1.1.0 이지만 문서 파일명은 RELEASE_NOTES_1.1.0.md 다. 앞의 v 를 떼어
+      # 두지 않으면 아래에서 없는 파일을 읽으려 한다.
       - name: 태그에서 버전 뽑기
         id: ver
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # 릴리즈 본문을 파일에서 읽으려면 소스가 있어야 한다. build 잡과 달리 이 잡은
+      # 지금까지 산출물만 받았으므로 저장소가 없었다.
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
 
       - name: 산출물 내려받기
         uses: actions/download-artifact@v4
@@ -147,32 +154,50 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # 설치 안내를 위에, 릴리즈 노트 전문을 아래에 붙인다. 릴리즈 페이지를 연 사람이
+      # 가장 먼저 찾는 것은 "어느 파일을 받아야 하는가"이지 변경 내역이 아니다.
+      - name: 릴리즈 본문 만들기
+        run: |
+          set -e
+          notes="docs/RELEASE_NOTES_${{ steps.ver.outputs.version }}.md"
+          {
+            echo "## 설치"
+            echo
+            echo "| 파일 | 대상 |"
+            echo "|---|---|"
+            echo "| \`ForgeOS-*-macos-arm64.dmg\` | Apple Silicon Mac |"
+            echo "| \`ForgeOS-*-macos-x64.dmg\` | Intel Mac |"
+            echo "| \`ForgeOS-*-windows-x64.msi\` | Windows 10 · 11 |"
+            echo "| \`ForgeOS-*-linux-x64.deb\` | Debian · Ubuntu |"
+            echo "| \`ForgeOS-*-portable.zip\` | 설치 없이 압축을 풀어 \`bin/ForgeOS\` 실행 |"
+            echo
+            echo "자바를 따로 설치할 필요가 없습니다. 실행에 필요한 런타임이 안에 들어 있습니다."
+            echo
+            echo "> **macOS 안내 — 이 앱은 서명·공증되어 있지 않습니다.**"
+            echo "> 처음 열 때 \"손상되었기 때문에 열 수 없습니다\"가 뜨면 아래를 한 번 실행하세요."
+            echo "> \`\`\`bash"
+            echo "> xattr -dr com.apple.quarantine /Applications/ForgeOS.app"
+            echo "> \`\`\`"
+            echo "> Apple 이 서명 없는 앱에 격리 속성을 붙이기 때문이며, 앱이 실제로 손상된 것은 아닙니다."
+            echo
+            echo "---"
+            echo
+            if [ -f "$notes" ]; then
+              cat "$notes"
+            else
+              # 노트를 안 썼다고 릴리즈를 실패시키지는 않는다. 대신 눈에 띄게 남긴다.
+              echo "> ⚠️ \`$notes\` 를 찾지 못했습니다. 릴리즈 노트를 작성한 뒤 본문을 직접 채워 주세요."
+            fi
+          } > release-body.md
+          wc -l release-body.md
+
       - name: 릴리즈 생성
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          draft: true
+          body_path: release-body.md
+          # 드래프트가 아니라 바로 공개하고, Latest 배지를 이 릴리즈로 옮긴다.
+          draft: false
+          prerelease: false
+          make_latest: true
           generate_release_notes: false
-          body: |
-            ForgeOS ${{ github.ref_name }}
-
-            자세한 내용은 `docs/RELEASE_NOTES_${{ steps.ver.outputs.version }}.md` 를 참고하세요.
-
-            ### 설치
-
-            | 파일 | 대상 |
-            |---|---|
-            | `ForgeOS-*-macos-arm64.dmg` | Apple Silicon Mac |
-            | `ForgeOS-*-macos-x64.dmg` | Intel Mac |
-            | `ForgeOS-*-windows-x64.msi` | Windows 10/11 |
-            | `ForgeOS-*-linux-x64.deb` | Debian · Ubuntu |
-            | `ForgeOS-*-portable.zip` | 설치 없이 압축을 풀어 `bin/ForgeOS` 실행 |
-
-            자바를 따로 설치할 필요가 없습니다. 실행에 필요한 런타임이 안에 들어 있습니다.
-
-            > **macOS 안내 — 이 앱은 서명·공증되어 있지 않습니다.**
-            > 처음 열 때 "손상되었기 때문에 열 수 없습니다"가 뜨면 아래를 한 번 실행하세요.
-            > ```bash
-            > xattr -dr com.apple.quarantine /Applications/ForgeOS.app
-            > ```
-            > Apple 이 서명 없는 앱에 격리 속성을 붙이기 때문이며, 앱이 실제로 손상된 것은 아닙니다.

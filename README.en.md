@@ -146,7 +146,7 @@ installer.
 jlink images **do not cross-compile**: run it on macOS and you get a `.dmg`, on Windows an
 `.msi`. All four targets are built together by `.github/workflows/release.yml` — push a `v*`
 tag and four runners (mac arm64 · mac x64 · win · linux) each bake one and attach it to a
-draft release.
+release, with the body filled from `docs/RELEASE_NOTES_*.md`.
 
 > `javafx.web` (WebKit) makes the artifacts roughly **300 MB**. That is the price of shipping
 > a browser.
