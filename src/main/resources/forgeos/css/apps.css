@@ -105,9 +105,20 @@
     -fx-background-color: -fill-subtle;
     -fx-border-color: transparent transparent transparent -edge-line;
     -fx-border-width: 0 0 0 1px;
-    -fx-padding: 18px 20px;
-    -fx-spacing: 20px;
-    -fx-pref-width: 236px;
+    -fx-padding: 18px 18px 22px 18px;
+    -fx-spacing: 18px;
+    -fx-pref-width: 250px;
+}
+
+/* 게이지 넷 + 정책 상자는 작은 창에서 세로가 모자란다. 잘리는 대신 스크롤한다.
+   폭은 스크롤 창이 잡아 준다 — 안쪽 VBox 에만 pref 를 주면 스크롤바가 겹쳐 나온다. */
+.monitor-sidebar-scroll {
+    -fx-background-color: transparent;
+    -fx-pref-width: 268px;
+}
+
+.monitor-sidebar-scroll > .viewport {
+    -fx-background-color: transparent;
 }
 
 .sidebar-note {
@@ -143,6 +154,12 @@
 
 .accent-cyan {
     -fx-stroke: -electric-cyan;
+}
+
+/* 스왑은 "메모리가 디스크로 밀려났다"는 다른 층위의 사건이라 브랜드 3색 밖의
+   보라를 쓴다. 로고의 불티와 같은 색이므로 시스템 밖으로 튀지는 않는다. */
+.accent-violet {
+    -fx-stroke: -forge-violet;
 }
 
 .donut-value {
@@ -192,6 +209,68 @@
 .state-terminated {
     -fx-background-color: -danger-tint;
     -fx-text-fill: -danger-text;
+}
+
+/* ── 탭 안쪽 ── */
+
+.monitor-tabs {
+    -fx-background-color: transparent;
+}
+
+.monitor-pane {
+    -fx-background-color: transparent;
+}
+
+.monitor-memory {
+    -fx-spacing: 0;
+}
+
+/* 표 위에 붙는 작은 제목. 표가 둘 겹쳐 있으면 어느 쪽이 무엇인지 반드시 써 줘야 한다. */
+.monitor-section {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-secondary;
+    -fx-padding: 10px 14px 6px 14px;
+}
+
+.monitor-status-bar {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: -edge-line transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+    -fx-padding: 6px 14px;
+}
+
+/* ── 준비 큐 ── */
+/*
+ * MLFQ 는 큐가 셋, 나머지 스케줄러는 하나다. 개수가 달라지므로 FlowPane 에
+ * 얹어 넘치면 다음 줄로 흘리게 둔다. 비어 있는 큐도 감추지 않는다 —
+ * "Q2 가 비어 있다"는 것 자체가 MLFQ 를 이해하는 데 필요한 정보다.
+ */
+
+.queue-strip {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: -edge-line transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+    -fx-padding: 9px 14px;
+    -fx-hgap: 8px;
+    -fx-vgap: 6px;
+}
+
+.queue-chip {
+    -fx-background-color: -fill-soft;
+    -fx-background-radius: 6px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 6px;
+    -fx-padding: 4px 10px;
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-dim;
+}
+
+/* 프로세스가 들어 있는 큐만 살아난다. 눈이 먼저 가야 할 곳이 거기다. */
+.queue-chip:on {
+    -fx-background-color: -accent-tint;
+    -fx-border-color: -accent-border;
+    -fx-text-fill: -accent-text;
 }
 
 /* ─────────────────────────── Finder ─────────────────────────── */
@@ -387,4 +466,146 @@
 .graph-node:deadlocked .graph-node-label {
     -fx-text-fill: -danger-text;
     -fx-font-weight: bold;
+}
+
+/* ─────────────────────────── 메모장 ─────────────────────────── */
+
+.notepad {
+    -fx-background-color: transparent;
+}
+
+.notepad-sidebar {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: transparent -edge-line transparent transparent;
+    -fx-border-width: 0 1px 0 0;
+    -fx-pref-width: 220px;
+    -fx-spacing: 0;
+}
+
+.notepad-path {
+    -fx-font-size: 11.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-secondary;
+    -fx-padding: 12px 14px 4px 14px;
+}
+
+.notepad-sidebar-header {
+    -fx-spacing: 6px;
+    -fx-padding: 4px 12px 10px 12px;
+}
+
+.notepad-file-list {
+    -fx-background-color: transparent;
+}
+
+.notepad-main {
+    -fx-background-color: transparent;
+}
+
+/*
+ * 편집기만 고정폭 글꼴이다. 커널 파일 시스템에 들어가는 것은 대부분 설정·로그·
+ * 짧은 메모라, 비례 글꼴보다 자릿수가 맞는 편이 읽기 쉽다.
+ */
+.notepad-editor {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", monospace;
+    -fx-font-size: 13px;
+}
+
+.notepad-editor .content {
+    -fx-background-color: -fill-sunken;
+}
+
+.notepad-open-file {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -text-dim;
+}
+
+.notepad-status-bar {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: -edge-line transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+    -fx-padding: 6px 14px;
+    -fx-spacing: 12px;
+}
+
+.notepad-status {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-dim;
+}
+
+.notepad-count {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-dim;
+}
+
+/* 저장되지 않은 변경이 있는 파일. 크기 대신 점이 뜬다. */
+.entry-size:on {
+    -fx-text-fill: -molten-gold;
+    -fx-font-weight: bold;
+}
+
+/* ─────────────────────────── Firefox ─────────────────────────── */
+/*
+ * 브라우저의 내용물은 우리 스타일시트가 닿지 않는 남의 문서다. 그래서 여기서
+ * 칠할 수 있는 것은 크롬(도구 모음·탭·주소창)뿐이고, 그 크롬은 최대한 얇아야
+ * 한다 — 페이지가 주인공인 앱에서 크롬이 두꺼우면 창이 작아 보인다.
+ */
+
+.browser {
+    -fx-background-color: transparent;
+}
+
+.browser-toolbar {
+    -fx-spacing: 4px;
+    -fx-padding: 7px 10px;
+}
+
+.browser-nav {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 5px 8px;
+    -fx-cursor: hand;
+}
+
+.browser-nav:hover {
+    -fx-background-color: -fill-medium;
+}
+
+.browser-nav:disabled {
+    -fx-opacity: 0.3;
+}
+
+.browser-address-box {
+    -fx-background-color: -fill-sunken;
+    -fx-background-radius: 9px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 9px;
+    -fx-padding: 0 10px;
+    -fx-spacing: 6px;
+}
+
+/* 주소창은 상자 안의 상자다. 자기 배경과 테두리를 지워야 한 겹으로 보인다. */
+.browser-address {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-pref-width: 100;
+    -fx-padding: 7px 2px;
+    -fx-font-size: 12.5px;
+}
+
+.browser-address:focused {
+    -fx-border-color: transparent;
+}
+
+.browser-lock {
+    -fx-stroke: -accent-text;
+    -fx-stroke-width: 1.7;
+}
+
+.browser-tabs {
+    -fx-background-color: transparent;
+}
+
+.browser-progress > .bar {
+    -fx-background-color: -forge-ember;
 }
