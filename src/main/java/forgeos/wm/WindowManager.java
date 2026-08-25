@@ -1,6 +1,7 @@
 package forgeos.wm;
 
 import forgeos.app.AppContext;
+import forgeos.app.AppProcessTable;
 import forgeos.app.AppInstance;
 import forgeos.app.ForgeApp;
 import forgeos.core.KernelService;
@@ -48,6 +49,9 @@ public final class WindowManager extends Pane {
     private static final double OPEN_SCALE = 0.94;
 
     private final AppContext context;
+
+    /** 열려 있는 창과 커널 프로세스를 묶어 두는 표. */
+    private final AppProcessTable processes;
     private final Map<String, ForgeWindow> openWindows = new LinkedHashMap<>();
     private final Map<ForgeWindow, Runnable> disposers = new HashMap<>();
     private final ObservableList<String> runningAppIds = FXCollections.observableArrayList();
@@ -65,6 +69,7 @@ public final class WindowManager extends Pane {
      */
     public WindowManager(KernelService kernelService) {
         this.context = new AppContext(kernelService, this);
+        this.processes = new AppProcessTable(kernelService, this::closeByAppId);
         getStyleClass().add("window-layer");
         // 레이어 자체는 배경이 없다. 빈 곳을 클릭하면 아래(바탕화면)로 통과해야 한다.
         setPickOnBounds(false);
@@ -99,8 +104,25 @@ public final class WindowManager extends Pane {
         runningAppIds.add(app.id());
         getChildren().add(window);
 
+        // 창을 화면에 올린 다음에 프로세스를 만든다. 커널이 없거나 내려간 상태라도
+        // 창은 떠야 하기 때문이다 — 종료 화면에서 앱을 여는 것이 예외로 터지면 안 된다.
+        processes.launch(app);
+
         focus(window);
         Motion.materialize(window, OPEN_SCALE, Duration.millis(240));
+    }
+
+    /**
+     * 프로세스가 사라진 앱의 창을 닫는다.
+     *
+     * <p>활성 상태 보기에서 앱 프로세스를 강제 종료했을 때 {@code AppProcessTable}이
+     * 부른다. 표에서 죽인 것이 화면에도 반영되어야 표가 장식이 아니게 된다.</p>
+     */
+    private void closeByAppId(String appId) {
+        ForgeWindow window = openWindows.get(appId);
+        if (window != null) {
+            close(window);
+        }
     }
 
     /**
@@ -155,6 +177,7 @@ public final class WindowManager extends Pane {
             getChildren().remove(window);
             openWindows.remove(window.appId());
             runningAppIds.remove(window.appId());
+            processes.terminate(window.appId());
 
             Runnable dispose = disposers.remove(window);
             if (dispose != null) {
