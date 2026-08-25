@@ -1,0 +1,169 @@
+# ForgeOS 릴리즈 빌드
+#
+# jlink 런타임 이미지는 빌드한 플랫폼에서만 돈다. 크로스 컴파일이 안 되므로
+# macOS·Windows·Linux 러너에서 각각 굽고, 한데 모아 릴리즈에 붙인다.
+#
+# 커널과 CLI 는 Maven Central 에 없고 mavenLocal 로만 배포되므로, 빌드 전에
+# 두 저장소를 받아 publishToMavenLocal 을 돌려야 한다. 이것이 이 워크플로가
+# 저장소 셋을 체크아웃하는 이유다.
+#
+# v* 태그를 밀면 자동으로 돌고, 수동 실행(workflow_dispatch)으로 의존 저장소의
+# 브랜치·태그를 지정해 시험 빌드만 할 수도 있다.
+
+name: 릴리즈 빌드
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      framework_ref:
+        description: "forge-framework 태그 또는 브랜치 (비우면 기본 브랜치)"
+        default: ""
+      cli_ref:
+        description: "forge-cli 태그 또는 브랜치 (비우면 기본 브랜치)"
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 한 플랫폼이 실패해도 나머지는 끝까지 굽는다. 셋 중 하나만 깨졌을 때
+      # 무엇이 되고 무엇이 안 되는지 한 번에 보여야 고칠 수 있다.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macos-arm64
+          - os: macos-13
+            label: macos-x64
+          - os: windows-latest
+            label: windows-x64
+          - os: ubuntu-22.04
+            label: linux-x64
+
+    steps:
+      - name: ForgeOS 체크아웃
+        uses: actions/checkout@v4
+        with:
+          path: forge-os
+
+      - name: 커널 체크아웃
+        uses: actions/checkout@v4
+        with:
+          repository: Jongwoo0101/forge-framework
+          # 비워 두면 그 저장소의 기본 브랜치를 받는다. forge-framework 는 master,
+          # forge-cli 는 main 이라 이름을 박아 두면 한쪽이 조용히 깨진다.
+          ref: ${{ github.event.inputs.framework_ref }}
+          path: forge-framework
+
+      - name: CLI 체크아웃
+        uses: actions/checkout@v4
+        with:
+          repository: Jongwoo0101/forge-cli
+          ref: ${{ github.event.inputs.cli_ref }}
+          path: forge-cli
+
+      - name: JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      # jpackage 의 msi 는 WiX Toolset 3 이 있어야 한다. 러너 이미지에 이미
+      # 들어 있는 경우가 많지만, 빠진 이미지로 바뀌어도 빌드가 깨지지 않도록 확인한다.
+      - name: WiX 확인 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset -y --no-progress
+            echo "$env:WIX\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: 커널과 CLI 를 mavenLocal 에 설치
+        shell: bash
+        run: |
+          chmod +x forge-framework/gradlew forge-cli/gradlew forge-os/gradlew || true
+          (cd forge-framework && ./gradlew --no-daemon publishToMavenLocal)
+          (cd forge-cli       && ./gradlew --no-daemon publishToMavenLocal)
+
+      - name: 설치본과 포터블 이미지 빌드
+        shell: bash
+        working-directory: forge-os
+        run: ./gradlew --no-daemon jpackage jlinkZip
+
+      - name: 산출물 이름 정리
+        shell: bash
+        working-directory: forge-os
+        run: |
+          set -e
+          # 버전은 태그가 아니라 gradle.properties 를 따른다. 수동 실행에서도
+          # 이름이 제대로 붙고, 태그와 빌드 산출물이 어긋나면 그 자체로 신호가 된다.
+          version=$(grep '^version=' gradle.properties | cut -d= -f2)
+          mkdir -p dist
+          shopt -s nullglob
+          for f in build/jpackage/*.dmg build/jpackage/*.msi build/jpackage/*.deb; do
+            cp "$f" "dist/ForgeOS-${version}-${{ matrix.label }}.${f##*.}"
+          done
+          # 설치하지 않고 압축만 풀어 쓰는 쪽을 위한 런타임 이미지.
+          if [ -f build/image.zip ]; then
+            cp build/image.zip "dist/ForgeOS-${version}-${{ matrix.label }}-portable.zip"
+          fi
+          ls -la dist
+
+      - name: 산출물 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: forgeos-${{ matrix.label }}
+          path: forge-os/dist/*
+          if-no-files-found: error
+
+  release:
+    name: 릴리즈에 첨부
+    # 태그를 밀었을 때만 릴리즈를 만든다. 수동 실행은 산출물만 남기고 끝난다.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 산출물 내려받기
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 릴리즈 생성
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          generate_release_notes: false
+          body: |
+            ForgeOS ${{ github.ref_name }}
+
+            자세한 내용은 `docs/RELEASE_NOTES_${{ github.ref_name }}.md` 를 참고하세요.
+
+            ### 설치
+
+            | 파일 | 대상 |
+            |---|---|
+            | `ForgeOS-*-macos-arm64.dmg` | Apple Silicon Mac |
+            | `ForgeOS-*-macos-x64.dmg` | Intel Mac |
+            | `ForgeOS-*-windows-x64.msi` | Windows 10/11 |
+            | `ForgeOS-*-linux-x64.deb` | Debian · Ubuntu |
+            | `ForgeOS-*-portable.zip` | 설치 없이 압축을 풀어 `bin/ForgeOS` 실행 |
+
+            자바를 따로 설치할 필요가 없습니다. 실행에 필요한 런타임이 안에 들어 있습니다.
+
+            > **macOS 안내 — 이 앱은 서명·공증되어 있지 않습니다.**
+            > 처음 열 때 "손상되었기 때문에 열 수 없습니다"가 뜨면 아래를 한 번 실행하세요.
+            > ```bash
+            > xattr -dr com.apple.quarantine /Applications/ForgeOS.app
+            > ```
+            > Apple 이 서명 없는 앱에 격리 속성을 붙이기 때문이며, 앱이 실제로 손상된 것은 아닙니다.
