@@ -69,6 +69,49 @@ public final class Glyphs {
     /** 달 — 다크 테마. */
     public static final String MOON = "M20.2 14.8A8.6 8.6 0 0 1 9.2 3.8A8.7 8.7 0 1 0 20.2 14.8Z";
 
+    /** Notepad — 줄이 그어진 종이와 연필. */
+    public static final String NOTEPAD = "M6.4 3.8H14L17.6 7.4V12"
+            + " M6.4 3.8V20.2H12 M14 3.8V7.4H17.6"
+            + " M9.2 9.6H13.6 M9.2 12.8H12.4"
+            + " M20.4 13.6L21.8 15L16.2 20.6L13.8 21.2L14.4 18.8Z";
+
+    /** Firefox — 자오선이 그려진 지구본. WebKit 이 그리는 웹이 여기서 열린다. */
+    public static final String BROWSER = "M12 3.4a8.6 8.6 0 1 0 0 17.2a8.6 8.6 0 1 0 0-17.2"
+            + " M3.4 12H20.6"
+            + " M12 3.4c2.6 2.4 4 5.4 4 8.6s-1.4 6.2-4 8.6c-2.6-2.4-4-5.4-4-8.6s1.4-6.2 4-8.6";
+
+    /** 저장 — 받침 위로 내려앉는 화살표. */
+    public static final String SAVE = "M12 4.6V14.6 M8.4 11.2L12 14.8L15.6 11.2"
+            + " M5.6 17V18.6A1.4 1.4 0 0 0 7 20H17A1.4 1.4 0 0 0 18.4 18.6V17";
+
+    /** fork — 한 줄기에서 갈라져 나온 가지. */
+    public static final String FORK = "M7.5 5.6m-2.2 0a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0-4.4 0"
+            + " M16.5 18.4m-2.2 0a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0-4.4 0"
+            + " M7.5 7.8V12.2A3 3 0 0 0 10.5 15.2H13.5A3 3 0 0 1 16.5 18.2";
+
+    /** disk.img — 겹쳐 쌓인 원통. 영속화된 파일 시스템을 가리킨다. */
+    public static final String DISK = "M12 4.4C15.9 4.4 19 5.5 19 6.9S15.9 9.4 12 9.4"
+            + "S5 8.3 5 6.9S8.1 4.4 12 4.4Z"
+            + " M5 6.9V17.1C5 18.5 8.1 19.6 12 19.6S19 18.5 19 17.1V6.9"
+            + " M5 12C5 13.4 8.1 14.5 12 14.5S19 13.4 19 12";
+
+    /** 뒤로. */
+    public static final String ARROW_LEFT = "M14.6 6.4L9 12L14.6 17.6";
+
+    /** 앞으로. */
+    public static final String ARROW_RIGHT = "M9.4 6.4L15 12L9.4 17.6";
+
+    /** 홈 — 브라우저 시작 페이지. */
+    public static final String HOME = "M4.4 11.2L12 4.6L19.6 11.2"
+            + " M6.6 9.6V19.4H17.4V9.6 M10.2 19.4V14.4H13.8V19.4";
+
+    /** 닫기(탭·패널). 신호등의 그것과 모양은 같지만 쓰임이 달라 따로 둔다. */
+    public static final String CLOSE = "M7.6 7.6L16.4 16.4 M16.4 7.6L7.6 16.4";
+
+    /** 자물쇠 — 주소창의 https 표시. */
+    public static final String LOCK = "M8.2 10.6V8.4A3.8 3.8 0 0 1 15.8 8.4V10.6"
+            + " M6.8 10.6H17.2V18.8H6.8Z";
+
     /** 신호등 — 닫기. */
     public static final String LIGHT_CLOSE = "M8.6 8.6L15.4 15.4 M15.4 8.6L8.6 15.4";
 

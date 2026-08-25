@@ -15,6 +15,9 @@
     -forge-ember:        #ff6b4a;
     -molten-gold:        #ffb627;
     -electric-cyan:      #22d3ee;
+    /* 로고의 불꽃에서 튀는 보라 불티. 1.1.0 에서 게이지가 넷이 되며 이름을 얻었다 —
+       프레임(Ember)·힙(Gold)·TLB(Cyan) 옆에서 스왑이 자기 색을 가져야 했다. */
+    -forge-violet:       #d946ef;
 
     /* ── 바탕 ── */
     -forge-bg:           #eef1f6;
