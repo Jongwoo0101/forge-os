@@ -26,10 +26,7 @@ import javafx.scene.shape.StrokeLineCap;
  */
 final class DonutChart extends VBox {
 
-    /** 고리의 바깥 지름(px). */
-    private static final double SIZE = 112;
-
-    /** 고리 두께(px). */
+    /** 고리 두께(px). 지름이 달라져도 두께는 유지한다 — 얇아지면 색이 안 읽힌다. */
     private static final double THICKNESS = 11;
 
     private final Arc progress = new Arc();
@@ -40,20 +37,28 @@ final class DonutChart extends VBox {
     private final SpringValue sweep = new SpringValue(value -> progress.setLength(value))
             .tune(Motion.RESPONSE_STANDARD, Motion.DAMPING_STANDARD);
 
-    DonutChart(String caption, String accentStyleClass) {
+    /**
+     * 게이지 하나를 만든다.
+     *
+     * @param caption          고리 아래 제목
+     * @param accentStyleClass 고리 색을 정하는 CSS 클래스
+     * @param size             고리의 바깥 지름(px). 사이드바에 몇 개가 들어가는지에 따라 다르다
+     */
+    DonutChart(String caption, String accentStyleClass, double size) {
         getStyleClass().add("donut");
         setAlignment(Pos.CENTER);
 
-        double radius = (SIZE - THICKNESS) / 2;
+        final double diameter = size;
+        double radius = (diameter - THICKNESS) / 2;
 
-        Arc track = new Arc(SIZE / 2, SIZE / 2, radius, radius, 0, 360);
+        Arc track = new Arc(diameter / 2, diameter / 2, radius, radius, 0, 360);
         track.setType(ArcType.OPEN);
         track.setFill(null);
         track.setStrokeWidth(THICKNESS);
         track.getStyleClass().add("donut-track");
 
-        progress.setCenterX(SIZE / 2);
-        progress.setCenterY(SIZE / 2);
+        progress.setCenterX(diameter / 2);
+        progress.setCenterY(diameter / 2);
         progress.setRadiusX(radius);
         progress.setRadiusY(radius);
         // 12시 방향에서 시작해 시계 방향으로 찬다. 시계와 같은 방향이라 설명이 필요 없다.
@@ -66,9 +71,9 @@ final class DonutChart extends VBox {
         progress.getStyleClass().addAll("donut-progress", accentStyleClass);
 
         Pane ring = new Pane(track, progress);
-        ring.setPrefSize(SIZE, SIZE);
-        ring.setMinSize(SIZE, SIZE);
-        ring.setMaxSize(SIZE, SIZE);
+        ring.setPrefSize(diameter, diameter);
+        ring.setMinSize(diameter, diameter);
+        ring.setMaxSize(diameter, diameter);
 
         valueLabel.getStyleClass().add("donut-value");
         StackPane center = new StackPane(ring, valueLabel);
