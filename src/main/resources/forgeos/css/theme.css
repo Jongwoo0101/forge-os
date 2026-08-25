@@ -738,6 +738,114 @@
 
 /* ── 툴팁 ── */
 
+/* ── 탭 ── */
+/*
+ * 탭은 창을 더 만들지 않고 화면을 나누는 유일한 수단이다. 활성 상태 보기의
+ * 프로세스/메모리, 브라우저의 페이지들이 모두 여기 얹힌다. macOS 의 탭이
+ * 그렇듯 선택된 탭만 밝고, 나머지는 배경으로 물러난다.
+ */
+
+.tab-pane > .tab-header-area {
+    -fx-padding: 0;
+}
+
+.tab-pane > .tab-header-area > .tab-header-background {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: transparent transparent -edge-line transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-padding: 7px 16px;
+    -fx-cursor: hand;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:hover {
+    -fx-background-color: -fill-soft;
+}
+
+/* 선택된 탭은 배경이 아니라 밑줄로 표시한다. 배경을 칠하면 탭 줄이
+   두 겹으로 보이고, 창 제목 표시줄과 색이 겹쳐 어디까지가 창인지 흐려진다. */
+.tab-pane > .tab-header-area > .headers-region > .tab:selected {
+    -fx-background-color: -fill-medium;
+    -fx-border-color: transparent transparent -electric-cyan transparent;
+    -fx-border-width: 0 0 2px 0;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab .tab-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:selected .tab-label {
+    -fx-text-fill: -text-primary;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab .tab-close-button {
+    -fx-background-color: -text-dim;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:hover .tab-close-button {
+    -fx-background-color: -text-primary;
+}
+
+/* JavaFX 는 선택된 탭에 점선 초점 테두리를 그린다. 우리 디자인에는 없는 물건이다. */
+.tab-pane > .tab-header-area > .headers-region > .tab:selected .focus-indicator {
+    -fx-border-color: transparent;
+}
+
+.tab-pane > .tab-content-area {
+    -fx-background-color: transparent;
+}
+
+/* ── 여러 줄 입력 ── */
+
+.text-area {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-dim;
+    -fx-highlight-fill: -accent-tint-strong;
+    -fx-padding: 0;
+}
+
+.text-area > .scroll-pane {
+    -fx-background-color: transparent;
+}
+
+.text-area .content {
+    -fx-background-color: transparent;
+    -fx-padding: 14px 16px;
+}
+
+/* ── 진행 막대 ── */
+/*
+ * 브라우저의 로딩 표시. 두께 3px 에 트랙이 없다 — 진행 중일 때만 나타나고
+ * 끝나면 자리째 사라지므로, 비어 있는 트랙을 보여 줄 이유가 없다.
+ */
+
+.progress-bar {
+    -fx-pref-height: 3px;
+    -fx-min-height: 3px;
+    -fx-max-height: 3px;
+    -fx-padding: 0;
+}
+
+.progress-bar > .track {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+}
+
+.progress-bar > .bar {
+    -fx-background-color: -electric-cyan;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
 .tooltip {
     -fx-background-color: -glass-thick;
     -fx-background-radius: 7px;
