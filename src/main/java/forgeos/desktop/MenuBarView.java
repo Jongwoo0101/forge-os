@@ -33,7 +33,7 @@ import java.util.List;
  * 화면 상단의 메뉴바.
  *
  * <p>왼쪽은 "지금 무엇을 쓰고 있는가"(Forge 마크 + 활성 창 이름), 오른쪽은
- * "지금 커널이 어떤 상태인가"(프로세스 수, 메모리, 가동 시간, 시계)다.
+ * "지금 커널이 어떤 상태인가"(프로세스 수, 메모리, 스왑, 가동 시간, 시계)다.
  * 어느 앱을 쓰고 있든 커널 상태가 항상 한 줄로 보이는 것이 이 시뮬레이터의
  * 핵심 가치라고 보고 자리를 내줬다.</p>
  */
@@ -47,6 +47,7 @@ final class MenuBarView extends HBox {
     private final Label activeAppLabel = new Label("ForgeOS");
     private final Label processChip = chip("프로세스 —");
     private final Label memoryChip = chip("메모리 —");
+    private final Label swapChip = chip("스왑 —");
     private final Label uptimeChip = chip("가동 —");
     private final Label clockLabel = new Label();
 
@@ -71,7 +72,7 @@ final class MenuBarView extends HBox {
                 activeAppLabel,
                 forgeMenu(windowManager, onQuit),
                 spacer,
-                processChip, memoryChip, uptimeChip, themeToggle(theme), clockLabel);
+                processChip, memoryChip, swapChip, uptimeChip, themeToggle(theme), clockLabel);
 
         windowManager.activeWindowProperty().addListener((obs, old, now) ->
                 activeAppLabel.setText(now == null ? "ForgeOS" : now.title()));
@@ -159,6 +160,16 @@ final class MenuBarView extends HBox {
             int total = snapshot.totalFrames();
             double ratio = total == 0 ? 0 : (double) snapshot.usedFrames() / total;
             memoryChip.setText("메모리 %.0f%%".formatted(ratio * 100));
+
+            // 스왑이 꺼진 커널(swapSlots=0)에서는 칩 자체를 감춘다. 항상 "0"인 숫자는
+            // 자리만 먹고 아무것도 알려 주지 않는다.
+            boolean swapOn = snapshot.swapTotalSlots() > 0;
+            swapChip.setVisible(swapOn);
+            swapChip.setManaged(swapOn);
+            if (swapOn) {
+                swapChip.setText("스왑 %d/%d · 폴트 %d".formatted(
+                        snapshot.swapUsedSlots(), snapshot.swapTotalSlots(), snapshot.pageFaults()));
+            }
         }
 
         SystemCallResult uptime = kernelService.call(SystemCallType.UPTIME);
