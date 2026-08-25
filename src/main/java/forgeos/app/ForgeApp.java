@@ -45,6 +45,22 @@ public interface ForgeApp {
     double preferredHeight();
 
     /**
+     * 이 앱이 커널에서 차지할 힙 크기(바이트).
+     *
+     * <p>창이 열리면 {@code AppProcessTable}이 이만큼 {@code malloc}한다.
+     * 기본 프레임 크기가 4바이트짜리 16장뿐인 커널이므로 값은 아주 작아야 한다 —
+     * 여기서 넉넉하게 잡으면 앱 몇 개를 여는 것만으로 물리 메모리가 차서
+     * 사용자가 만드는 프로세스가 곧바로 스왑으로 밀린다.</p>
+     *
+     * <p>기본값 4바이트는 프레임 딱 한 장이다. 더 무거운 앱만 재정의한다.</p>
+     *
+     * @return 할당할 바이트 수. 0이면 할당하지 않는다
+     */
+    default int memoryFootprint() {
+        return 4;
+    }
+
+    /**
      * 앱 화면을 만든다. 창이 열릴 때마다 한 번 호출된다.
      *
      * @param context 커널 접근과 창 관리자
