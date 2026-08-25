@@ -18,6 +18,13 @@ module forgeos {
     /** 부팅 애니메이션(MP4) 재생용. 이 모듈이 빠지면 시네마틱 부팅 2단계가 통째로 사라진다. */
     requires javafx.media;
 
+    /**
+     * Firefox 앱의 렌더링 엔진(WebView). JavaFX 가 품는 엔진은 Gecko 가 아니라
+     * WebKit 이므로 "Firefox 를 띄운다"가 아니라 "Firefox 를 닮은 브라우저를
+     * ForgeOS 안에서 돌린다"가 정확한 표현이다.
+     */
+    requires javafx.web;
+
     /** 커널. ForgeOS의 모든 상태는 여기서 나온다. */
     requires forgeframework;
 
