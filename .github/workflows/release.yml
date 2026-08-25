@@ -40,7 +40,10 @@ jobs:
         include:
           - os: macos-14
             label: macos-arm64
-          - os: macos-13
+          # macos-13 은 2025-12-04 로 종료됐다. Intel 맥용 x86_64 러너는 이 라벨이다.
+          # Apple 이 x86_64 지원을 접었으므로 이 러너도 2027년 가을에 사라진다 —
+          # 그때가 되면 Intel 산출물을 뺄지 결정해야 한다.
+          - os: macos-15-intel
             label: macos-x64
           - os: windows-latest
             label: windows-x64
