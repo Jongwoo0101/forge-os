@@ -81,7 +81,7 @@ final class MenuBarView extends HBox {
         clock.setCycleCount(Animation.INDEFINITE);
         clock.play();
 
-        kernelService.onRefresh(this::refreshStats);
+        kernelService.onRefresh(this, this::refreshStats);
     }
 
     /**
@@ -144,8 +144,16 @@ final class MenuBarView extends HBox {
         clockLabel.setText(LocalDateTime.now().format(CLOCK_FORMAT));
     }
 
+    /**
+     * 메뉴바의 커널 상태 칩을 갱신한다.
+     *
+     * <p>1.1.1 부터 {@code callCached} 로 묻는다. 같은 펄스에 앱 프로세스 표와 활성
+     * 상태 보기도 {@code PS}·{@code MEMINFO} 를 필요로 하는데, 셋이 각자 부르면
+     * 커널이 같은 일을 세 번 한다. 게다가 서로 다른 순간의 답을 받으므로 메뉴바가
+     * "프로세스 5"라고 하는데 표에는 여섯 줄이 있는 어긋남도 생겼다.</p>
+     */
     private void refreshStats() {
-        SystemCallResult ps = kernelService.call(SystemCallType.PS);
+        SystemCallResult ps = kernelService.callCached(SystemCallType.PS);
         if (ps.isSuccess()) {
             List<ProcessDto> processes = ps.dataAsList(ProcessDto.class);
             long alive = processes.stream()
@@ -154,7 +162,7 @@ final class MenuBarView extends HBox {
             processChip.setText("프로세스 " + alive);
         }
 
-        SystemCallResult mem = kernelService.call(SystemCallType.MEMINFO);
+        SystemCallResult mem = kernelService.callCached(SystemCallType.MEMINFO);
         if (mem.isSuccess()) {
             MemorySnapshot snapshot = mem.dataAs(MemorySnapshot.class);
             int total = snapshot.totalFrames();
@@ -172,7 +180,7 @@ final class MenuBarView extends HBox {
             }
         }
 
-        SystemCallResult uptime = kernelService.call(SystemCallType.UPTIME);
+        SystemCallResult uptime = kernelService.callCached(SystemCallType.UPTIME);
         if (uptime.isSuccess()) {
             UptimeDto dto = uptime.dataAs(UptimeDto.class);
             uptimeChip.setText("가동 " + formatUptime(dto.uptimeSeconds()));

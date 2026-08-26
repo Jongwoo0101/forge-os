@@ -39,7 +39,7 @@ import java.util.List;
 final class TerminalView extends BorderPane {
 
     /** 화면에 유지하는 최대 텍스트 조각 수. */
-    private static final int MAX_SEGMENTS = 4000;
+    private static final int MAX_SEGMENTS = 1500;
 
     /** 되짚을 수 있는 명령 기록 수. */
     private static final int MAX_HISTORY = 200;

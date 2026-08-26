@@ -18,7 +18,7 @@ import java.util.function.Consumer;
  * 열려 있는 앱 창과 커널 프로세스를 1:1로 묶어 두는 표.
  *
  * <h2>왜 필요했나</h2>
- * <p>{@code 1.1.0}까지 ForgeOS의 앱 창은 순수 JavaFX 노드였다. Firefox를 여섯 개
+ * <p>{@code 1.1.0}까지 ForgeOS의 앱 창은 순수 JavaFX 노드였다. ForgeWeb을 여섯 개
  * 열어도 커널은 그 사실을 몰랐고, 활성 상태 보기의 프로세스 표는 비어 있었으며
  * 메모리 게이지도 0이었다. <b>운영체제 시뮬레이터의 데스크탑에서 앱을 실행했는데
  * 그 운영체제가 모른다</b>는 것은 설명하기 어려운 상태다. 창을 열면 프로세스가
@@ -40,7 +40,7 @@ import java.util.function.Consumer;
  * 돌아가는 GUI 앱의 실제 동작과 같다.</p>
  *
  * <h2>프로세스를 죽이면 창이 닫힌다</h2>
- * <p>활성 상태 보기에서 {@code firefox} 프로세스를 강제 종료하면 Firefox 창이
+ * <p>활성 상태 보기에서 {@code forgeweb} 프로세스를 강제 종료하면 ForgeWeb 창이
  * 닫힌다. 표와 화면이 같은 사실을 가리키게 하려면 방향이 양쪽으로 다 통해야 한다.
  * 한쪽으로만 통하면 표는 장식이 된다.</p>
  */
@@ -146,7 +146,8 @@ public final class AppProcessTable {
         if (pidByAppId.isEmpty()) {
             return;
         }
-        SystemCallResult ps = kernelService.call(SystemCallType.PS);
+        // 같은 펄스에 메뉴바와 활성 상태 보기도 PS 를 본다. 한 번만 묻는다.
+        SystemCallResult ps = kernelService.callCached(SystemCallType.PS);
         if (!ps.isSuccess()) {
             return;
         }

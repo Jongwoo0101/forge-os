@@ -82,7 +82,8 @@ final class DeadlockResolverView extends BorderPane {
         setCenter(graph);
         setBottom(buildRequestBar());
 
-        this.subscription = kernelService.onRefresh(this::refresh);
+        // 창이 최소화돼 있으면 그래프를 다시 계산할 이유가 없다.
+        this.subscription = kernelService.onRefresh(this, this::refresh);
         refresh();
     }
 
@@ -258,12 +259,15 @@ final class DeadlockResolverView extends BorderPane {
     }
 
     private void refresh() {
-        SystemCallResult info = kernelService.call(SystemCallType.RES_INFO);
+        SystemCallResult info = kernelService.callCached(SystemCallType.RES_INFO);
         if (!info.isSuccess()) {
             return;
         }
         ResourceSnapshotDto snapshot = info.dataAs(ResourceSnapshotDto.class);
-        rows.setAll(snapshot.rows());
+        // 내용이 그대로면 표를 갈아 끼우지 않는다 — setAll 은 셀 전부를 다시 만든다.
+        if (!rows.equals(snapshot.rows())) {
+            rows.setAll(snapshot.rows());
+        }
 
         availableLabel.setText("가용 %s / 전체 %s  ·  자원 %s".formatted(
                 format(snapshot.available()),
@@ -280,7 +284,7 @@ final class DeadlockResolverView extends BorderPane {
             syncingPolicy = false;
         }
 
-        SystemCallResult detect = kernelService.call(SystemCallType.DETECT);
+        SystemCallResult detect = kernelService.callCached(SystemCallType.DETECT);
         if (detect.isSuccess()) {
             applyDetection(detect.dataAs(DeadlockDetectDto.class));
         }

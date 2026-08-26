@@ -42,6 +42,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -58,6 +59,17 @@ import java.util.List;
  * (스케줄러·우선순위·큐 등급), <b>"메모리가 어디로 갔는가"</b>(프레임·스왑·COW 공유)
  * 까지다. 그래서 표는 탭 둘로 나뉜다 — 프로세스 탭이 앞의 질문을, 메모리 탭이
  * 뒤의 질문을 맡는다. 게이지는 두 탭에 공통이라 사이드바에 남는다.</p>
+ *
+ * <h2>1.1.1 — 달라진 것이 없으면 아무것도 하지 않는다</h2>
+ * <p>1.1.0 은 펄스마다 {@code processes.setAll(...)} 을 불렀다. 내용이 완전히
+ * 같아도 {@code TableView} 는 그것을 "표가 통째로 바뀌었다"로 받아들여 셀을 전부
+ * 다시 만들고 다시 배치한다. 프로세스가 하나도 없는 화면에서조차 초당 한 번씩
+ * 그 일이 일어났고, 창을 최소화해 두어도 멈추지 않았다.</p>
+ *
+ * <p>이제 셋이 달라졌다. (1) 구독을 {@code onRefresh(this, ...)} 로 걸어
+ * <b>보이지 않으면 갱신 자체를 건너뛴다</b>. (2) 스냅샷이 지난번과 같으면
+ * {@code setAll} 을 부르지 않는다 — record 라 값 비교가 공짜에 가깝다.
+ * (3) 상태 배지 셀이 매번 {@code Label} 을 새로 만들지 않고 하나를 다시 쓴다.</p>
  *
  * <h2>주기 갱신과 사용자 조작이 부딪히지 않게</h2>
  * <p>스케줄러·교체 정책 콤보 상자는 커널 값을 되비추면서 동시에 사용자 입력을
@@ -103,6 +115,12 @@ final class ActivityMonitorView extends BorderPane {
     /** 커널 값을 콤보에 되비추는 중. 그동안 변경 이벤트는 무시한다. */
     private boolean syncing;
 
+    /** 마지막으로 화면에 반영한 메모리 스냅샷. 같은 값이면 게이지도 문구도 손대지 않는다. */
+    private MemorySnapshot lastMemory;
+
+    /** 마지막으로 그린 준비 큐 칩의 문구. 같으면 칩을 다시 만들지 않는다. */
+    private List<String> lastQueueTexts = List.of();
+
     ActivityMonitorView(AppContext context) {
         this.kernelService = context.kernel();
         getStyleClass().add("activity-monitor");
@@ -120,7 +138,8 @@ final class ActivityMonitorView extends BorderPane {
         setCenter(left);
         setRight(buildSidebar());
 
-        this.subscription = kernelService.onRefresh(this::refresh);
+        // 창이 Dock 으로 최소화되면 이 화면은 보이지 않는다. 그동안은 갱신하지 않는다.
+        this.subscription = kernelService.onRefresh(this, this::refresh);
         refresh();
     }
 
@@ -323,7 +342,7 @@ final class ActivityMonitorView extends BorderPane {
                 ? "proc" + (processes.size() + 1)
                 : processNameField.getText().trim();
 
-        List<String> args = new java.util.ArrayList<>();
+        List<String> args = new ArrayList<>();
         args.add(name);
         if (!burstTimeField.getText().isBlank()) {
             args.add(burstTimeField.getText().trim());
@@ -434,11 +453,17 @@ final class ActivityMonitorView extends BorderPane {
     }
 
     private void refreshProcesses() {
-        SystemCallResult result = kernelService.call(SystemCallType.PS);
+        SystemCallResult result = kernelService.callCached(SystemCallType.PS);
         if (!result.isSuccess()) {
             return;
         }
         List<ProcessDto> snapshot = result.dataAsList(ProcessDto.class);
+
+        // 값이 그대로면 표를 건드리지 않는다. setAll 은 셀을 전부 다시 만들게 하고,
+        // 그 김에 선택을 풀었다가 다시 거는 잔파도까지 일으킨다.
+        if (processes.equals(snapshot)) {
+            return;
+        }
 
         ProcessDto selected = table.getSelectionModel().getSelectedItem();
         Integer selectedPid = selected == null ? null : selected.pid();
@@ -456,11 +481,16 @@ final class ActivityMonitorView extends BorderPane {
     }
 
     private void refreshMemory() {
-        SystemCallResult result = kernelService.call(SystemCallType.MEMINFO);
+        SystemCallResult result = kernelService.callCached(SystemCallType.MEMINFO);
         if (!result.isSuccess()) {
             return;
         }
         MemorySnapshot snapshot = result.dataAs(MemorySnapshot.class);
+        if (snapshot.equals(lastMemory)) {
+            // 아래 문단은 문자열을 예닐곱 개 만든다. 값이 같으면 만들 이유가 없다.
+            return;
+        }
+        lastMemory = snapshot;
 
         int totalFrames = snapshot.totalFrames();
         double frameRatio = totalFrames == 0 ? 0 : (double) snapshot.usedFrames() / totalFrames;
@@ -506,7 +536,7 @@ final class ActivityMonitorView extends BorderPane {
     }
 
     private void refreshScheduler() {
-        SystemCallResult result = kernelService.call(SystemCallType.SCHEDULER);
+        SystemCallResult result = kernelService.callCached(SystemCallType.SCHEDULER);
         if (!result.isSuccess()) {
             return;
         }
@@ -521,16 +551,30 @@ final class ActivityMonitorView extends BorderPane {
         }
         syncing = false;
 
-        queueStrip.getChildren().clear();
+        // 칩의 문구가 그대로면 노드를 지웠다 다시 만들지 않는다. 노드 생성은
+        // CSS 재적용과 레이아웃을 동반하므로, 초당 한 번이라도 눈에 띄게 비싸다.
+        List<String> texts = new ArrayList<>(dto.queues().size());
         for (SchedulerQueueDto queue : dto.queues()) {
-            queueStrip.getChildren().add(queueChip(dto, queue));
+            texts.add(queueText(dto, queue));
+        }
+        if (texts.equals(lastQueueTexts)) {
+            return;
+        }
+        lastQueueTexts = texts;
+
+        queueStrip.getChildren().clear();
+        for (int i = 0; i < texts.size(); i++) {
+            queueStrip.getChildren().add(queueChip(texts.get(i), !dto.queues().get(i).pids().isEmpty()));
         }
     }
 
     private void refreshFrameTable() {
-        SystemCallResult result = kernelService.call(SystemCallType.FRAMETABLE);
+        SystemCallResult result = kernelService.callCached(SystemCallType.FRAMETABLE);
         if (result.isSuccess()) {
-            frames.setAll(result.dataAsList(FrameInfo.class));
+            List<FrameInfo> snapshot = result.dataAsList(FrameInfo.class);
+            if (!frames.equals(snapshot)) {
+                frames.setAll(snapshot);
+            }
         }
     }
 
@@ -543,10 +587,13 @@ final class ActivityMonitorView extends BorderPane {
         }
         pageTableTitle.setText("페이지 테이블 — PID %d (%s)".formatted(selected.pid(), selected.name()));
 
-        SystemCallResult result = kernelService.call(
+        SystemCallResult result = kernelService.callCached(
                 SystemCallType.PAGETABLE, String.valueOf(selected.pid()));
         if (result.isSuccess()) {
-            pages.setAll(result.dataAsList(PageInfo.class));
+            List<PageInfo> snapshot = result.dataAsList(PageInfo.class);
+            if (!pages.equals(snapshot)) {
+                pages.setAll(snapshot);
+            }
         } else {
             pages.clear();
         }
@@ -554,7 +601,8 @@ final class ActivityMonitorView extends BorderPane {
 
     // ────────────────────────────── 보조 ──────────────────────────────
 
-    private Label queueChip(SchedulerDto scheduler, SchedulerQueueDto queue) {
+    /** 칩에 들어갈 문구. 노드를 만들기 전에 "달라졌는가"를 이 문자열로 판단한다. */
+    private static String queueText(SchedulerDto scheduler, SchedulerQueueDto queue) {
         String title = scheduler.queues().size() > 1
                 ? "Q%d (q=%d)".formatted(queue.level(), queue.timeQuantum())
                 : "준비 큐 (q=%d)".formatted(queue.timeQuantum());
@@ -562,10 +610,13 @@ final class ActivityMonitorView extends BorderPane {
                 ? "비어 있음"
                 : queue.pids().stream().map(String::valueOf)
                         .reduce((a, b) -> a + " → " + b).orElse("");
+        return title + "  " + body;
+    }
 
-        Label chip = new Label(title + "  " + body);
+    private static Label queueChip(String text, boolean occupied) {
+        Label chip = new Label(text);
         chip.getStyleClass().add("queue-chip");
-        chip.pseudoClassStateChanged(Styles.ON, !queue.pids().isEmpty());
+        chip.pseudoClassStateChanged(Styles.ON, occupied);
         return chip;
     }
 
@@ -640,7 +691,18 @@ final class ActivityMonitorView extends BorderPane {
     /** 상태를 색 배지로 보여 주는 셀. 색은 CSS의 {@code .state-*} 클래스가 정한다. */
     private static final class StateCell extends TableCell<ProcessDto, ProcessState> {
 
+        /**
+         * 셀 하나에 배지 하나. 다시 만들지 않는다.
+         *
+         * <p>{@code updateItem} 은 표가 갱신될 때마다 보이는 행 수만큼 불린다.
+         * 여기서 {@code new Label(...)} 을 하면 그때마다 새 노드가 장면에 붙었다
+         * 떨어지고, 그 노드 하나하나에 CSS 가 다시 적용된다. 배지는 글자와 색만
+         * 바뀌므로 껍데기는 그대로 두고 내용만 갈아 끼우는 것이 맞다.</p>
+         */
+        private final Label badge = new Label();
+
         StateCell() {
+            badge.getStyleClass().add("state-badge");
         }
 
         @Override
@@ -651,9 +713,9 @@ final class ActivityMonitorView extends BorderPane {
                 setText(null);
                 return;
             }
-            Label badge = new Label(state.name());
-            badge.getStyleClass().addAll("state-badge", "state-" + state.name().toLowerCase(
-                    java.util.Locale.ROOT));
+            badge.setText(state.name());
+            badge.getStyleClass().setAll("state-badge",
+                    "state-" + state.name().toLowerCase(java.util.Locale.ROOT));
             setGraphic(badge);
             setText(null);
         }
