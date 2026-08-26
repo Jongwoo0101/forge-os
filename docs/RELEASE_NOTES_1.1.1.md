@@ -11,7 +11,6 @@
 | **큰 그림자와 흐림** | 반경 54px 짜리 창 그림자와 배경화면의 가우시안 흐림을 매 프레임 다시 구웠습니다 |
 | **1초 갱신 펄스** | 세 화면이 같은 펄스에 `PS`를 각자 불렀고, 최소화한 창도 계속 표를 다시 그렸습니다 |
 | **부팅 시퀀스** | 데스크탑까지 약 17초. 그중 10초가 부팅 영상이었습니다 |
-| **부팅 2단계** | MP4 한 편을 재생하는 것이 전부였습니다. 리소스 2.4MB · `javafx.media` · 전환 순간 굳는 화면 |
 
 | 바뀐 이름 | |
 |---|---|
@@ -150,39 +149,9 @@ if (processes.equals(snapshot)) {
 문구가 달라졌을 때만 다시 만들고, 메모리 스냅샷이 그대로면 문자열 예닐곱 개를 만드는
 문단 전체를 건너뜁니다.
 
-## 4. 부팅 2단계를 다시 만들었습니다
+## 4. 부팅 — 연출은 그대로, 기다림만 덜어냈습니다
 
-`1.1.0`의 2단계는 10초짜리 MP4였습니다. 영상은 세 가지 값을 치렀습니다.
-
-- 리소스 **2.4MB**
-- `javafx.media` 모듈과 그에 딸린 **네이티브 라이브러리**
-- 전환 순간 디코더를 세우느라 **화면이 굳는 시간** (그것도 FX 스레드에서)
-
-그 대가로 얻은 것은 매번 똑같이 재생되는 10초였습니다. 새 2단계
-(`BootSplash`)에는 **도형밖에 없습니다.**
-
-### 무엇을 보여 주는가
-
-위에서 아래로 **후광 → 로고 → 워드마크 → 스피너 → 상태 문구**입니다.
-
-| 요소 | 움직임 | 왜 그렇게 |
-|---|---|---|
-| **후광** | 점선 원 두 겹(r=268 · 188)이 초당 11° · 17°로 시계 방향 | 배경화면의 동심원과 같은 자리·같은 성격입니다. 부팅이 끝나고 배경이 드러날 때 두 화면이 "같은 세계"로 이어집니다 |
-| **로고** | `ForgeMark` 132px, 0.55초 동안 커지며 밝아짐 | 배경화면이 쓰는 것과 **같은 벡터**입니다. 어느 해상도에서도 깨지지 않습니다 |
-| **스피너** | 초당 210° 시계 방향, 호의 길이가 34° ↔ 292°를 1.5초 주기로 오감 | 고리가 일정한 길이로만 돌면 그것은 시계입니다. 길이가 숨을 쉬어야 "진행 중"으로 읽힙니다 |
-| **안쪽 호** | 초당 335°, 청록 실선 66° | 하나만 돌면 시계, 둘이 다른 속도로 돌면 기계입니다 |
-| **불티** | 호의 머리에 붙어 돎 | 지금 어디까지 왔는지 알려 주는 유일한 점입니다 |
-| **상태 문구** | 0.3초 → 1.0초 → 1.6초에 교체 | 커널은 1단계에서 이미 다 떴습니다. 그러니 여기서 "커널 초기화 중"이라고 쓰면 거짓말입니다 — 이 구간에 실제로 일어나는 일만 적습니다 |
-
-**끝맺음이 중요합니다.** 마지막 0.5초에 호가 **완전한 원으로 닫히면서** 전체가 살짝
-커집니다. 로딩이 흐지부지 사라지는 대신 "채워졌다"로 끝나야, 다음에 오는 데스크탑이
-그 결과로 읽힙니다.
-
-**전환도 겹칩니다.** `1.1.0`은 콘솔이 완전히 사라진 *뒤에* 다음 장면을 시작했습니다.
-두 시간이 더해지고, 그 0.4초 동안 화면에는 검은색밖에 없었습니다. 둘 다 검은 배경 위에
-있으므로 겹쳐 두면 **글자가 흐려지는 자리에서 로고가 떠오르는 한 장면**이 됩니다.
-
-### 1단계도 시간 예산을 다시 짰습니다
+세 단계(타이핑 로그 → MP4 → 데스크탑)는 그대로입니다. 시간 예산만 다시 짰습니다.
 
 | 자리 | 1.1.0 | 1.1.1 | 왜 |
 |---|---|---|---|
@@ -190,23 +159,21 @@ if (processes.equals(snapshot)) {
 | 줄 사이 숨 | 55ms | 18ms | |
 | 커널 단계 지연 | 260ms × 5 | 80ms × 5 | 이 1초 동안 화면에서는 <b>아무 일도 일어나지 않습니다</b> — 타이핑은 이미 쌓인 줄을 처리하느라 바쁩니다 |
 | 콘솔 최소 체류 | 1200ms | 500ms | 깜빡임을 막는 하한이지 연출 시간이 아닙니다 |
-| 2단계 | 10.0초 (MP4) | 2.4초 (스플래시) | |
-| 장면 페이드 | 620ms | 400ms | |
+| MP4 재생 | 10.0초 | 3.6초 | 로고가 여물고 화면이 밝아지는 데까지가 앞 3.6초입니다 |
+| 장면 페이드 | 620ms | 400ms | 부팅에서 세 번 쓰입니다 |
 
-**타이핑은 프레임 단위로 반영합니다.** 2.2ms 간격이면 60fps에서 한 프레임에 일고여덟
+**영상 준비를 앞당겼습니다.** `1.1.0`은 콘솔이 다 찍힌 <b>뒤에야</b> 2.4MB 리소스를 임시
+파일로 풀고 디코더를 세웠고, 그 일이 FX 스레드에서 벌어져 화면이 한 박자 굳었습니다.
+이제 부팅과 <b>동시에</b> 백그라운드에서 끝납니다 — 콘솔이 로그를 찍는 동안은 어차피
+비어 있던 시간입니다.
+
+**타이핑도 프레임 단위로 반영합니다.** 2.2ms 간격이면 60fps에서 한 프레임에 일고여덟
 글자가 찍히는데, 화면에 그려지는 것은 마지막 상태 하나뿐입니다. 그런데 `1.1.0`은 글자마다
 `setText`를 불러 그 횟수만큼 라벨 크기 계산과 부모 `VBox`의 배치 무효화를 일으켰습니다.
 아무도 보지 못하는 중간 상태에 값을 온전히 치르고 있었던 셈입니다.
 
-> 계산상 데스크탑까지 **약 17초 → 약 4.3초**입니다. 기계마다 다르므로 실제 값은 직접
+> 계산상 데스크탑까지 **약 17초 → 약 6초**입니다. 기계마다 다르므로 실제 값은 직접
 > 확인해 주세요. `ESC` · `Space` · 클릭으로 건너뛰는 길은 그대로 있습니다.
-
-### 남은 것
-
-`assets/` 의 MP4 두 개는 **지우지 않고 그대로 두었습니다.** 쓰는 곳은 없습니다 —
-되살리고 싶을 때를 위해 남겨 둔 것이고, 배포본에서 5MB를 되찾고 싶으면 두 파일을
-지우면 됩니다. 영상을 되살리려면 `module-info.java` 의 `requires javafx.media` 와
-`build.gradle.kts` 의 `javafx.modules` 양쪽을 되돌려야 합니다.
 
 ## 5. Firefox → ForgeWeb
 
@@ -244,8 +211,6 @@ if (processes.equals(snapshot)) {
 - 화면 구성, 조작 방법, 단축키, 테마 토큰 40개가 **전부 그대로**입니다.
 - **깨지는 변경 하나:** 브라우저 앱의 id가 `firefox` → `forgeweb`입니다. 터미널에서
   `kill` 할 프로세스를 이름으로 찾던 습관이 있다면 새 이름을 쓰세요.
-- **`javafx.media` 의존이 사라졌습니다.** 배포 이미지에서 미디어 네이티브 라이브러리가
-  빠집니다. 이 모듈을 쓰던 곳은 부팅 영상 하나뿐이었습니다.
 - ForgeFramework `1.1.1` · ForgeCLI `1.1.1`이 필요합니다. 세 저장소의 번호는 계속 맞춰
   둡니다. JavaFX 21.0.5, JDK 21 — 변경 없음.
 
@@ -257,10 +222,9 @@ if (processes.equals(snapshot)) {
 - 커널 검증 스위트 **313개 항목 전부 통과**.
 
 > **사람이 봐야 하는 것:** GUI 실행은 컨테이너에서 불가능합니다. 창을 끌 때의 부드러움,
-> 확대·최소화의 궤적, 얕아진 그림자가 어색하지 않은지, 스피너가 **시계 방향**으로
-> 도는지(각도 부호를 한 번 틀리면 반대로 돕니다), 콘솔에서 스플래시로 넘어가는 순간이
-> 겹쳐 보이는지, 최소화한 활성 상태 보기를 다시 열었을 때 값이 곧바로 맞는지 —
-> 이 여섯은 직접 확인해 주세요.
+> 확대·최소화의 궤적, 얕아진 그림자가 어색하지 않은지, 부팅 영상이 3.6초에서 어색하게
+> 끊기지 않는지, 최소화한 활성 상태 보기를 다시 열었을 때 값이 곧바로 맞는지 —
+> 이 다섯은 직접 확인해 주세요.
 
 ## 파일
 
@@ -274,9 +238,8 @@ if (processes.equals(snapshot)) {
 | `app/deadlock/DeadlockResolverView.java` | 스코프 구독 · 캐시된 조회 · 표 diff |
 | `desktop/MenuBarView.java` · `app/AppProcessTable.java` | 캐시된 조회 |
 | `desktop/Wallpaper.java` · `ui/ForgeMark.java` | 비트맵 캐시 · 흐림 반경 축소 |
-| `boot/BootSplash.java` | **신규** (`BootVideo` 를 대신함) — 로고 · 스피너 · 후광, 타이머 하나 |
-| `boot/BootSequence.java` · `boot/BootConsole.java` | 2단계 교체 · 콘솔 페이드와 스플래시 등장을 겹침 · 시간 예산 재조정 · 프레임 단위 타이핑 반영 |
-| `module-info.java` · `build.gradle.kts` | `javafx.media` 제거 |
+| `boot/BootVideo.java` | 백그라운드 사전 준비 · `stopTime` 으로 앞부분만 재생 |
+| `boot/BootSequence.java` · `boot/BootConsole.java` | 시간 예산 재조정 · 프레임 단위 타이핑 반영 |
 | `app/browser/ForgeWebApp.java` | `FirefoxApp` 에서 이름 변경 (id `forgeweb`) |
 | `app/browser/StartPage.java` · `app/AppCatalog.java` · `ui/Glyphs.java` · `module-info.java` | ForgeWeb 개명 반영 |
 | `app/terminal/TerminalView.java` | 출력 상한 4000 → 1500 |
@@ -336,24 +299,13 @@ visible — walking ancestors, because minimising hides the *window*, not the ap
 not. Badge cells reuse one `Label`, queue chips are rebuilt only when their text differs, and
 an unchanged memory snapshot skips a paragraph that builds half a dozen strings.
 
-**Boot stage 2 was rebuilt, and boot went from ~17s to ~4.3s** (estimated; confirm on your
-machine). The 10-second MP4 is gone. It cost a 2.4MB resource, the `javafx.media` module and
-its native libraries, and a hitch at the transition while a decoder was built *on the FX
-thread* — in exchange for the same ten seconds every time. `BootSplash` is nothing but
-shapes: the same vector logo the wallpaper draws, two dotted halo rings turning clockwise at
-11°/s and 17°/s, and a spinner beneath the logo running clockwise at 210°/s whose arc length
-breathes between 34° and 292° on a 1.5s cycle, with a faster thin cyan arc inside it and an
-ember riding the arc's head. A ring turning at a constant length is a clock; a breathing one
-is a loader. In the final 0.5s the arc closes into a full circle while everything scales up
-slightly — a loader that fizzles out reads as an interruption, one that completes reads as a
-result. The console fade and the splash entrance now *overlap* rather than queue, so there is
-no interval of plain black. Stage 1 was retimed too: per-character typing 6.5 → 2.2ms, line
-pause 55 → 18ms, kernel stage delay 260 → 80ms ×5 (that second bought nothing — the console
-was busy draining queued lines), minimum dwell 1200 → 500ms, scene fades 620 → 400ms, and
-typed text is flushed once per frame rather than once per character. `javafx.media` is no
-longer required, so the media natives leave the packaged image; the two MP4s stay in
-`assets/` unused, in case you want the video back. Skip with `ESC` / `Space` / click still
-works.
+**Boot: same three acts, ~17s → ~6s** (estimated; confirm on your machine). Per-character
+typing 6.5 → 2.2ms, line pause 55 → 18ms, kernel stage delay 260 → 80ms ×5 (that second
+bought nothing — the console was busy draining queued lines), minimum console dwell 1200 →
+500ms, video 10.0 → 3.6s via `stopTime`, scene fades 620 → 400ms. The video is now prepared
+on a background thread *during* boot instead of extracting a 2.4MB resource on the FX thread
+at the transition, and typed text is flushed once per frame rather than once per character.
+Skip with `ESC` / `Space` / click still works.
 
 **Firefox is now ForgeWeb.** The app never embedded Gecko — JavaFX ships WebKit and only
 WebKit — and borrowing a name you then have to footnote is worse than having your own. The

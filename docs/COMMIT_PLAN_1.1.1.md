@@ -1,6 +1,6 @@
 # ForgeOS 1.1.1 — 커밋 플랜
 
-커밋 **열하나**입니다. 성능 개편 여섯, 부팅 2단계 교체 하나, 개명 하나, 문서·버전 셋.
+커밋 **열하나**입니다. 성능 개편 일곱, 개명 둘, 문서·버전 둘.
 
 > **먼저 할 일:** forge-framework `1.1.1` 과 forge-cli `1.1.1` 을 `publishToMavenLocal`
 > 로 설치해 두세요. 5번 커밋이 `EventLogger.setLevelEnabled` 를 부릅니다.
@@ -12,7 +12,7 @@
 |---|---|
 | 2 (`ForgeWindow`) | 1 (`SpringValue.onFrame` 이 생김) |
 | 6 (앱 뷰들) | 5 (`callCached` · `onRefresh(Node, …)` 가 생김) |
-| 9 (README) | 7 · 8 (부팅 개편과 개명이 끝난 뒤라야 문서가 사실이 됨) |
+| 9 (README) | 8 (개명이 끝난 뒤라야 문서가 사실이 됨) |
 
 ---
 
@@ -122,45 +122,23 @@ git commit -m "perf(app): 스냅샷이 같으면 표를 다시 만들지 않고,
   메모리 스냅샷이 그대로면 문자열 문단 전체를 건너뜀.
 - 터미널 출력 상한 4000 → 1500 조각.
 
-## 7. 부팅 2단계 — MP4를 걷어내고 로고 스플래시로
+## 7. 부팅
 
 ```bash
-git mv src/main/java/forgeos/boot/BootVideo.java \
-       src/main/java/forgeos/boot/BootSplash.java
-git add src/main/java/forgeos/boot/BootSplash.java \
+git add src/main/java/forgeos/boot/BootVideo.java \
         src/main/java/forgeos/boot/BootSequence.java \
-        src/main/java/forgeos/boot/BootConsole.java \
-        src/main/java/module-info.java \
-        src/main/resources/forgeos/css/theme.css \
-        build.gradle.kts
-git commit -m "feat(boot): 부팅 2단계를 MP4에서 로고 스플래시로 바꾸고 시간 예산을 다시 짠다"
+        src/main/java/forgeos/boot/BootConsole.java
+git commit -m "perf(boot): 영상을 미리 준비하고 앞부분만 재생해 부팅을 6초대로 줄인다"
 ```
 
-**`git mv` 를 쓰세요.** `BootVideo` 가 있던 자리를 `BootSplash` 가 그대로 이어받으므로
-이력이 이어지는 편이 읽기 좋습니다.
+- `BootVideo.prepare` — 2.4MB 리소스를 임시 파일로 풀고 디코더를 세우는 일을 **부팅과
+  동시에 백그라운드에서**. `1.1.0` 은 이것을 전환 순간에 FX 스레드에서 했습니다.
+- `stopTime` 으로 10.0초 → 3.6초. 재생 종료 이벤트는 그 지점에서도 똑같이 옵니다.
+- 타이핑 6.5 → 2.2ms/글자, 줄 사이 55 → 18ms, 커널 단계 지연 260 → 80ms,
+  콘솔 최소 체류 1200 → 500ms.
+- `BootConsole.pump` 가 글자마다가 아니라 **프레임마다** 텍스트를 반영합니다.
 
-무엇이 들어가는지:
-
-- **`BootSplash`** — 로고(`ForgeMark`, 배경화면과 같은 벡터) · 시계 방향 스피너 ·
-  점선 후광 두 겹 · 상태 문구. 전부 도형이고 **`AnimationTimer` 하나**가 다 돌립니다.
-  마지막 0.5초에 호가 완전한 원으로 닫히며 끝맺습니다.
-- **`BootSequence`** — 2단계 교체. 콘솔 페이드 아웃과 스플래시 등장을 **동시에** 돌려
-  검은 화면만 보이는 0.4초를 없앱니다.
-- **`BootConsole`** — 타이핑 6.5 → 2.2ms/글자, 줄 사이 55 → 18ms. `pump` 가 글자마다가
-  아니라 **프레임마다** 텍스트를 반영합니다.
-- **`module-info.java` · `build.gradle.kts`** — `javafx.media` 제거. 이 모듈을 쓰던
-  곳은 부팅 영상 하나뿐이었습니다.
-- **`theme.css`** — `.boot-video` 를 `.boot-splash` 계열 10개 규칙으로 교체.
-
-> **각도 부호를 확인하세요.** JavaFX `Arc` 는 0도가 3시, 양수가 **반**시계입니다.
-> 그래서 시계 방향으로 그리려면 길이가 음수, 돌리려면 시작 각도가 **줄어들어야** 합니다.
-> 반대로 `Node.setRotate` 는 화면 좌표계라 시계 방향이 양수입니다 — 같은 방향인데
-> 부호가 반대라, 여기서 한 번 틀리면 후광과 스피너가 서로 반대로 돕니다.
-
-> `assets/` 의 MP4 두 개는 이 커밋에서 지우지 않습니다. 되살릴 여지를 남겨 둔 것이고,
-> 배포본에서 5MB를 되찾고 싶으면 별도 커밋으로 지우세요.
-
-계산상 약 17초 → 약 4.3초. 건너뛰기(`ESC` · `Space` · 클릭)는 그대로입니다.
+계산상 약 17초 → 약 6초. 건너뛰기(`ESC` · `Space` · 클릭)는 그대로입니다.
 
 ## 8. Firefox → ForgeWeb
 
@@ -172,7 +150,9 @@ git add src/main/java/forgeos/app/browser/ForgeWebApp.java \
         src/main/java/forgeos/app/AppCatalog.java \
         src/main/java/forgeos/app/AppProcessTable.java \
         src/main/java/forgeos/ui/Glyphs.java \
-        src/main/resources/forgeos/css/apps.css
+        src/main/java/module-info.java \
+        src/main/resources/forgeos/css/apps.css \
+        build.gradle.kts
 git commit -m "refactor(browser): 기본 브라우저의 이름을 ForgeWeb으로 바꾼다"
 ```
 
@@ -182,8 +162,6 @@ git commit -m "refactor(browser): 기본 브라우저의 이름을 ForgeWeb으�
 활성 상태 보기의 프로세스 표와 터미널에서 이름으로 프로세스를 찾던 습관이 영향을 받습니다.
 
 CSS 클래스는 원래부터 `browser-*` 였으므로 구역 주석 한 줄만 바뀝니다.
-`module-info.java` 와 `build.gradle.kts` 는 7번에서 이미 손댔으므로 여기서는 건드리지
-않습니다 — 그 두 파일의 주석에 있던 "Firefox" 표현도 7번에서 함께 정리됩니다.
 
 ## 9. README
 
@@ -233,9 +211,7 @@ git push origin v1.1.1
 - [ ] 표가 든 창(활성 상태 보기)을 끌 때 끊기지 않는지
 - [ ] 확대 · 최소화의 궤적이 `1.1.0` 과 같은 느낌인지 (캐시를 켜지 않는 구간입니다)
 - [ ] 얕아진 그림자에서도 창이 떠 보이는지 — 라이트 테마에서 특히
-- [ ] 스피너가 **시계 방향**으로 도는지 (각도 부호를 틀리면 반대로 돕니다)
-- [ ] 콘솔이 흐려지는 자리에서 로고가 떠오르는지 — 검은 화면만 보이는 구간이 없어야 합니다
-- [ ] 마지막에 호가 완전한 원으로 닫히고 나서 데스크탑이 뜨는지
+- [ ] 부팅 영상이 3.6초에서 어색하게 끊기지 않는지
 - [ ] 활성 상태 보기를 최소화했다 다시 열었을 때 값이 곧바로 맞는지
       (갱신이 멈춰 있었으므로, 다음 펄스가 아니라 **즉시** 맞아야 합니다)
 
