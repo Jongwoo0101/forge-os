@@ -49,7 +49,7 @@ ForgeOS는 [ForgeFramework](https://github.com/Jongwoo0101/forge-framework) 커�
   - [활성 상태 보기](#활성-상태-보기)
   - [Finder](#finder)
   - [메모장](#메모장)
-  - [Firefox](#firefox)
+  - [ForgeWeb](#forgeweb)
   - [교착 상태 관리자](#교착-상태-관리자)
 - [테마와 배경화면](#테마와-배경화면)
 - [시나리오로 배우기](#시나리오로-배우기)
@@ -87,8 +87,8 @@ ForgeOS는 [ForgeFramework](https://github.com/Jongwoo0101/forge-framework) 커�
 ### 요구 사항
 
 - **JDK 21** 이상
-- ForgeFramework 커널 `1.1.0`이 로컬 Maven 저장소(`~/.m2`)에 설치되어 있을 것
-- ForgeCLI `1.1.0`이 로컬 Maven 저장소에 설치되어 있을 것
+- ForgeFramework 커널 `1.1.1`이 로컬 Maven 저장소(`~/.m2`)에 설치되어 있을 것
+- ForgeCLI `1.1.1`이 로컬 Maven 저장소에 설치되어 있을 것
 
 > **`1.1.0`부터 세 저장소의 번호를 맞춰 둡니다.** "어느 커널에 맞는 CLI이고, 어느 CLI에
 > 맞는 OS인가"를 표에서 찾게 만들지 않으려는 것입니다. `1.0` 커널로는 빌드되지
@@ -113,7 +113,7 @@ cd forge-cli
 ./gradlew publishToMavenLocal
 ```
 
-`io.github.jongwoo0101:forgeframework:1.1.0`과 `io.github.jongwoo0101:forgecli:1.1.0`이
+`io.github.jongwoo0101:forgeframework:1.1.1`과 `io.github.jongwoo0101:forgecli:1.1.1`이
 `~/.m2/repository`에 설치됩니다.
 
 ### 3. ForgeOS를 실행합니다
@@ -126,7 +126,7 @@ cd forge-os
 ```
 
 > 의존성 해석에서 실패한다면 1·2번 단계의 `publishToMavenLocal`을 건너뛰었을
-> 가능성이 큽니다. 두 아티팩트 모두 `1.1.0`이어야 합니다.
+> 가능성이 큽니다. 두 아티팩트 모두 `1.1.1`이어야 합니다.
 
 > **파일을 재부팅 뒤에도 남기고 싶다면** 커널에 디스크 이미지를 지정하십시오.
 > 지정하지 않으면 파일 시스템은 메모리에만 삽니다(`diskImagePath` 기본값 `null`) —
@@ -167,7 +167,7 @@ GitHub Actions에서 합니다 — `v*` 태그를 밀면 네 러너(mac arm64 ·
 
 ```text
 =================================================
- ForgeFramework v1.1.0
+ ForgeFramework v1.1.1
  Operating System Kernel Architecture Engine
 =================================================
 [10:32:11.153] [INFO] 하드웨어 점검 중...
@@ -269,18 +269,18 @@ JavaFX `Stage`를 여러 개 띄우는 대신 데스크탑 위의 **노드**로 
 표와 도형에 바인딩합니다. CLI가 텍스트로 포맷한 것을 GUI가 다시 파싱하면, 포맷이
 바뀔 때마다 화면이 깨집니다.
 
-나머지 하나가 Firefox입니다. 커널을 한 번도 부르지 않는 유일한 앱이며, 그래서
+나머지 하나가 ForgeWeb입니다. 커널을 한 번도 부르지 않는 유일한 앱이며, 그래서
 "이 데스크탑은 시뮬레이터 전용 도구 모음이 아니라 데스크탑"이라는 말이 성립합니다.
 
 ### 앱은 커널 프로세스입니다
 
 창을 열면 커널에 **프로세스가 생기고 메모리가 할당됩니다.** 활성 상태 보기를 열어 두고
-Firefox를 띄우면 표에 `firefox` 행이 나타나고 힙 게이지가 움직입니다. 창을 닫으면
+ForgeWeb을 띄우면 표에 `forgeweb` 행이 나타나고 힙 게이지가 움직입니다. 창을 닫으면
 프로세스가 종료되고 메모리가 회수됩니다.
 
 | 앱 | 힙 |
 |---|---|
-| Firefox | 8바이트 (프레임 2장) |
+| ForgeWeb | 8바이트 (프레임 2장) |
 | 나머지 다섯 | 각 4바이트 (프레임 1장) |
 
 기본 커널의 물리 메모리가 4바이트짜리 프레임 16장, 즉 **64바이트뿐**이라 값이 이렇게
@@ -426,7 +426,7 @@ inode 2/16`처럼 바뀝니다. 커널을 디스크 이미지 없이 띄웠다�
 > 커널의 파일 시스템은 블록이 16장뿐인 기본 설정입니다. 긴 글을 넣으면 `디스크 공간이
 > 부족합니다`가 뜨는데, 이것도 정상 동작입니다 — 실제 파일 시스템이 하는 말과 같습니다.
 
-### Firefox
+### ForgeWeb
 
 ForgeOS의 기본 웹 브라우저. 커널을 한 번도 부르지 않는 유일한 앱입니다.
 
@@ -438,12 +438,15 @@ ForgeOS의 기본 웹 브라우저. 커널을 한 번도 부르지 않는 유일
 | 홈 | 내장 시작 페이지(`forge://start`) |
 | 탭 | `+` 로 추가. `target="_blank"`와 `window.open`도 새 창이 아니라 새 탭으로 받습니다 |
 
-**엔진에 대한 정직한 설명이 필요합니다.** 이 앱은 Mozilla의 Gecko를 품고 있지 않습니다.
-JavaFX가 들고 있는 렌더링 엔진은 `javafx.web`의 **WebKit** 하나뿐이고, 자바 프로세스
-안에서 Gecko를 띄울 방법은 없습니다. 그래서 이 앱은 "ForgeOS 창 안에서 도는 브라우저"
-이며, 이름과 자리(기본 브라우저)를 Firefox에게 준 것입니다. 호스트에 설치된 진짜
-Firefox를 실행하는 길도 있었지만, 그러면 창이 ForgeOS 바깥으로 튀어나가 가상
-데스크탑이라는 전제가 깨집니다.
+**1.1.1에서 이름이 바뀌었습니다.** 1.1.0까지 이 앱의 이름은 `Firefox`였습니다. 그런데
+이 앱은 Mozilla의 Gecko를 품고 있지 않습니다 — JavaFX가 들고 있는 렌더링 엔진은
+`javafx.web`의 **WebKit** 하나뿐이고, 자바 프로세스 안에서 Gecko를 띄울 방법은 없습니다.
+남의 이름을 빌린 채로 "사실 그 엔진이 아닙니다"를 각주로 다는 것보다 자기 이름을 갖는
+편이 정직하다고 보아 **ForgeWeb**으로 바꿨습니다. 앱 식별자도 `firefox` → `forgeweb`
+이므로 활성 상태 보기의 프로세스 표에도 같은 이름으로 뜹니다.
+
+호스트에 설치된 진짜 브라우저를 `Desktop.browse()`로 여는 길도 있었지만, 그러면 창이
+ForgeOS 바깥으로 튀어나가 가상 데스크탑이라는 전제가 깨집니다.
 
 시작 페이지가 원격 주소가 아니라 **내장 문서**인 것도 같은 종류의 판단입니다. 홈을
 실제 사이트로 두면 네트워크가 없는 자리에서 앱을 열자마자 오류 화면이 뜨고, 브라우저를
@@ -609,10 +612,10 @@ TLB 도넛이 차오릅니다. TLB 용량이 4이므로 서로 다른 페이지�
 
 1. **활성 상태 보기**를 엽니다. 표에 `activity-monitor` 프로세스가 이미 있습니다
    (상태는 `WAITING` — 입력을 기다리는 중입니다).
-2. **Firefox**를 엽니다. `firefox` 행이 생기고 힙 게이지가 눈에 띄게 움직입니다.
+2. **ForgeWeb**을 엽니다. `forgeweb` 행이 생기고 힙 게이지가 눈에 띄게 움직입니다.
 3. 터미널에서 `type hello`를 칩니다. 앱 프로세스 하나가 잠깐 `READY`가 되었다가
    다음 갱신에 다시 `WAITING`으로 돌아갑니다.
-4. 표에서 `firefox` 행을 고르고 **강제 종료**를 누릅니다. **Firefox 창이 닫힙니다.**
+4. 표에서 `forgeweb` 행을 고르고 **강제 종료**를 누릅니다. **ForgeWeb 창이 닫힙니다.**
 5. 물리 프레임 게이지가 내려갑니다 — 프로세스가 죽으면 커널이 주소 공간을 통째로
    회수하기 때문입니다.
 
@@ -630,8 +633,9 @@ forge-os/
 ├── gradle.properties                    # forgeFrameworkVersion · forgeCliVersion · javafxVersion
 ├── docs/
 │   ├── COMMIT_PLAN_1.0.md · RELEASE_NOTES_1.0.md
-│   ├── COMMIT_PLAN_1.1.0.md
-│   └── RELEASE_NOTES_1.1.0.md
+│   ├── COMMIT_PLAN_1.1.0.md · RELEASE_NOTES_1.1.0.md
+│   ├── COMMIT_PLAN_1.1.1.md
+│   └── RELEASE_NOTES_1.1.1.md
 ├── scripts/
 │   ├── build.sh
 │   ├── run.sh

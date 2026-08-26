@@ -50,7 +50,7 @@ guarantees that sooner or later a command works in the CLI but not in the GUI.
   - [Activity Monitor](#activity-monitor)
   - [Finder](#finder)
   - [Notepad](#notepad)
-  - [Firefox](#firefox)
+  - [ForgeWeb](#forgeweb)
   - [Deadlock Resolver](#deadlock-resolver)
 - [Theme and wallpaper](#theme-and-wallpaper)
 - [Learn by scenario](#learn-by-scenario)
@@ -88,8 +88,8 @@ The rest of this section is for **building from source**.
 ### Requirements
 
 - **JDK 21** or newer
-- ForgeFramework kernel `1.1.0` installed in your local Maven repository (`~/.m2`)
-- ForgeCLI `1.1.0` installed in your local Maven repository
+- ForgeFramework kernel `1.1.1` installed in your local Maven repository (`~/.m2`)
+- ForgeCLI `1.1.1` installed in your local Maven repository
 
 > **From `1.1.0` the three repositories share one version number**, so you never have to
 > look up which CLI matches which kernel. A `1.0` kernel will not build this release —
@@ -114,8 +114,8 @@ cd forge-cli
 ./gradlew publishToMavenLocal
 ```
 
-This installs `io.github.jongwoo0101:forgeframework:1.1.0` and
-`io.github.jongwoo0101:forgecli:1.1.0` into `~/.m2/repository`.
+This installs `io.github.jongwoo0101:forgeframework:1.1.1` and
+`io.github.jongwoo0101:forgecli:1.1.1` into `~/.m2/repository`.
 
 ### 3. Run ForgeOS
 
@@ -127,7 +127,7 @@ cd forge-os
 ```
 
 > If dependency resolution fails, you almost certainly skipped a `publishToMavenLocal` in
-> step 1 or 2. Both artifacts must be `1.1.0`. ForgeCLI first exported
+> step 1 or 2. Both artifacts must be `1.1.1`. ForgeCLI first exported
 > its command layer for other clients to use.
 
 ### Artifacts
@@ -165,7 +165,7 @@ line `EventLogger` emits is piped straight to the screen.
 
 ```text
 =================================================
- ForgeFramework v1.1.0
+ ForgeFramework v1.1.1
  Operating System Kernel Architecture Engine
 =================================================
 [10:32:11.153] [INFO] Hardware check...
@@ -266,10 +266,10 @@ when the pointer enters any of them.
 ### Apps are kernel processes
 
 Opening a window **creates a process and allocates memory** in the kernel. Keep Activity
-Monitor open, launch Firefox, and a `firefox` row appears while the heap gauge moves. Close
+Monitor open, launch ForgeWeb, and a `forgeweb` row appears while the heap gauge moves. Close
 the window and the process is killed, its address space reclaimed.
 
-Firefox takes 8 bytes (two frames); the other five take 4 each. The numbers are that small
+ForgeWeb takes 8 bytes (two frames); the other five take 4 each. The numbers are that small
 because the default kernel has **64 bytes of physical memory** — sixteen 4-byte frames. The
 browser being the heaviest app is not a joke: every other app just renders kernel tables,
 while this one carries a WebKit engine.
@@ -410,7 +410,7 @@ unsaved work is kept as a **draft** instead of being asked about — move betwee
 your edits stay, and a dot (•) in the list marks what has not been saved yet. The question
 was removed rather than answered.
 
-### Firefox
+### ForgeWeb
 
 The default web browser, and the only app that never calls the kernel.
 
@@ -422,12 +422,15 @@ The default web browser, and the only app that never calls the kernel.
 | Home | The built-in start page (`forge://start`) |
 | Tabs | `+` adds one. `target="_blank"` and `window.open` open tabs, not windows |
 
-**An honest note about the engine.** This app does not embed Mozilla's Gecko. The only
-rendering engine JavaFX ships is **WebKit**, in `javafx.web`, and there is no way to host
-Gecko inside a Java process. So this is "a browser running inside a ForgeOS window", and the
-name and the role of default browser were given to Firefox. Launching the host's real Firefox
-was the alternative, but then the window escapes ForgeOS and the virtual desktop stops being
-one.
+**Renamed in 1.1.1.** Through 1.1.0 this app was called `Firefox`. But it does not embed
+Mozilla's Gecko: the only rendering engine JavaFX ships is **WebKit**, in `javafx.web`, and
+there is no way to host Gecko inside a Java process. Rather than borrow a name and footnote
+"it is not actually that engine" every time, the app now has its own — **ForgeWeb**. The app
+id changed from `firefox` to `forgeweb`, so the Activity Monitor process table shows the same
+name too.
+
+Launching the host's real browser via `Desktop.browse()` was the alternative, but then the
+window escapes ForgeOS and the virtual desktop stops being one.
 
 The start page is a built-in document rather than a remote address for the same kind of
 reason: point home at a live site and the first thing a user sees on a machine without a
@@ -590,10 +593,10 @@ drops the ratio again — replacement, visible.
 
 1. Open **Activity Monitor**. Its own `activity-monitor` process is already in the table,
    sitting in `WAITING`.
-2. Open **Firefox**. A `firefox` row appears and the heap gauge visibly moves.
+2. Open **ForgeWeb**. A `forgeweb` row appears and the heap gauge visibly moves.
 3. Run `type hello` in the Terminal — one app process flips to `READY` and is parked again
    on the next refresh.
-4. Select the `firefox` row and press **force-kill**. **The Firefox window closes.**
+4. Select the `forgeweb` row and press **force-kill**. **The ForgeWeb window closes.**
 5. The physical-frame gauge drops: killing a process makes the kernel reclaim its whole
    address space.
 
@@ -611,8 +614,9 @@ forge-os/
 ├── gradle.properties                    # forgeFrameworkVersion · forgeCliVersion · javafxVersion
 ├── docs/
 │   ├── COMMIT_PLAN_1.0.md · RELEASE_NOTES_1.0.md
-│   ├── COMMIT_PLAN_1.1.0.md
-│   └── RELEASE_NOTES_1.1.0.md
+│   ├── COMMIT_PLAN_1.1.0.md · RELEASE_NOTES_1.1.0.md
+│   ├── COMMIT_PLAN_1.1.1.md
+│   └── RELEASE_NOTES_1.1.1.md
 ├── scripts/
 │   ├── build.sh
 │   ├── run.sh
