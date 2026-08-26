@@ -18,11 +18,14 @@ import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.scene.Node;
 import javafx.util.Duration;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
@@ -45,6 +48,21 @@ import java.util.function.Consumer;
  * <p>앱마다 각자 {@code Timeline}을 돌리면 창을 네 개 열었을 때 초당 네 번의
  * 서로 어긋난 갱신이 일어난다. 갱신 주기는 여기 하나로 모으고
  * ({@link #onRefresh}) 앱은 구독만 한다.</p>
+ *
+ * <h2>1.1.1 — 같은 질문을 같은 펄스에 여러 번 하지 않는다</h2>
+ * <p>1.1.0 에서 메뉴바·앱 프로세스 표·활성 상태 보기는 <b>각자</b> {@code PS} 를
+ * 불렀다. 셋이 같은 펄스 안에서 같은 질문을 세 번 한 셈이고, 커널은 그때마다
+ * 프로세스 표 전체를 잠그고 DTO 목록을 새로 만들었다. 게다가 서로 <b>다른 순간</b>의
+ * 답을 받으므로, 메뉴바의 "프로세스 5"와 표의 행 개수가 어긋나 보이는 일도 있었다.</p>
+ *
+ * <p>{@link #callCached}는 읽기 전용 시스템 콜의 결과를 <b>한 펄스 동안만</b> 붙들어
+ * 둔다. 상태를 바꾸는 {@link #call}이 한 번이라도 지나가면 즉시 버린다. 비용이 줄고,
+ * 덤으로 한 펄스 안의 모든 화면이 같은 순간을 보게 된다.</p>
+ *
+ * <h2>보이지 않는 창은 갱신하지 않는다</h2>
+ * <p>{@link #onRefresh(Node, Runnable)}로 구독하면, 그 노드가 화면에 보이지 않는 동안
+ * ({@code Dock}으로 최소화됐거나 아직 붙지 않았을 때) 갱신을 통째로 건너뛴다.
+ * 최소화한 창이 계속 표를 다시 그리고 있을 이유가 없다.</p>
  */
 public final class KernelService {
 
@@ -56,7 +74,19 @@ public final class KernelService {
 
     private final EventLogger logger = new EventLogger();
     private final ObservableList<LogEntry> logs = FXCollections.observableArrayList();
-    private final List<Runnable> refreshListeners = new ArrayList<>();
+
+    /**
+     * 갱신 구독자.
+     *
+     * <p>콜백 안에서 구독을 해지하는 경우가 있어 1.1.0 은 펄스마다 {@code List.copyOf}
+     * 로 복사본을 떴다. 읽기는 초당 한 번, 쓰기는 창을 여닫을 때뿐인 전형적인 COW
+     * 대상이라 자료구조를 바꾸는 편이 맞다 — 펄스마다 생기던 쓰레기가 사라진다.</p>
+     */
+    private final List<Runnable> refreshListeners = new CopyOnWriteArrayList<>();
+
+    /** 이번 펄스 동안 유효한 읽기 전용 시스템 콜의 답. {@link #callCached} 참고. */
+    private final Map<String, SystemCallResult> pulseCache = new HashMap<>();
+
     private final ReadOnlyBooleanWrapper running = new ReadOnlyBooleanWrapper(false);
 
     private final Timeline pulse = new Timeline(new KeyFrame(REFRESH_PERIOD, e -> firePulse()));
@@ -110,17 +140,29 @@ public final class KernelService {
      * <p>여기가 백그라운드 → FX 스레드 경계의 유일한 지점이다.</p>
      */
     private void install() {
-        logger.addListener(entry -> Platform.runLater(() -> {
-            if (logs.size() >= LOG_CAPACITY) {
-                logs.remove(0, logs.size() - LOG_CAPACITY + 1);
-            }
-            logs.add(entry);
+        // 커널에게 DEBUG 를 아예 만들지 말라고 일러 둔다. ForgeOS 에서 DEBUG 를
+        // 보여 주는 화면은 하나도 없는데, 1.1.0 은 시스템 콜 하나마다 DEBUG 한 줄을
+        // 만들어 문자열을 잇고 Platform.runLater 로 FX 스레드에 실어 보낸 뒤
+        // 아무도 읽지 않는 리스트에 넣고 있었다. 초당 여남은 번씩.
+        logger.setLevelEnabled(LogLevel.DEBUG, false);
 
-            Consumer<LogEntry> sink = bootLogSink;
-            if (sink != null) {
-                sink.accept(entry);
+        logger.addListener(entry -> {
+            // 커널을 직접 만든 클라이언트가 DEBUG 를 켜 두었더라도 여기서 막는다.
+            if (entry.getLevel() == LogLevel.DEBUG) {
+                return;
             }
-        }));
+            Platform.runLater(() -> {
+                if (logs.size() >= LOG_CAPACITY) {
+                    logs.remove(0, logs.size() - LOG_CAPACITY + 1);
+                }
+                logs.add(entry);
+
+                Consumer<LogEntry> sink = bootLogSink;
+                if (sink != null) {
+                    sink.accept(entry);
+                }
+            });
+        });
     }
 
     /** 부팅 화면이 끝난 뒤, 로그를 부팅 콘솔로 흘려보내던 통로를 끊는다. */
@@ -146,6 +188,42 @@ public final class KernelService {
      * @return 커널의 응답. 커널이 아직 없거나 이미 내려갔으면 실패 결과
      */
     public SystemCallResult call(SystemCallType type, String... args) {
+        // 상태를 바꿀 수 있는 호출이 지나갔다. 이번 펄스에 받아 둔 답은 전부 낡았다.
+        pulseCache.clear();
+        return invoke(type, args);
+    }
+
+    /**
+     * 읽기 전용 시스템 콜을 실행하되, 같은 펄스 안에서는 답을 재사용한다.
+     *
+     * <p>메뉴바·앱 프로세스 표·활성 상태 보기가 모두 {@code PS}를 필요로 한다.
+     * 셋이 각자 부르면 커널은 한 펄스에 프로세스 표를 세 번 잠그고 DTO 목록을 세 번
+     * 만든다. 답이 같을 것이 뻔한 질문이므로 한 번만 묻는다.</p>
+     *
+     * <p>캐시는 {@link #call}이 한 번이라도 지나가면 즉시 비워지고, 매 펄스 시작에도
+     * 비워진다. 그래서 "낡은 값을 계속 보여 주는" 일은 생기지 않는다. 읽기 전용이
+     * 아닌 종류를 넘기면 캐시하지 않고 그대로 실행한다 — 호출자가 실수해도 커널
+     * 상태가 어긋나지는 않게.</p>
+     *
+     * @param type 시스템 콜 종류 (읽기 전용이어야 캐시된다)
+     * @param args 인자
+     * @return 커널의 응답
+     */
+    public SystemCallResult callCached(SystemCallType type, String... args) {
+        if (!isCacheable(type, args)) {
+            return call(type, args);
+        }
+        String key = cacheKey(type, args);
+        SystemCallResult hit = pulseCache.get(key);
+        if (hit != null) {
+            return hit;
+        }
+        SystemCallResult result = invoke(type, args);
+        pulseCache.put(key, result);
+        return result;
+    }
+
+    private SystemCallResult invoke(SystemCallType type, String... args) {
         Kernel current = kernel;
         if (current == null) {
             return SystemCallResult.failure("커널이 아직 부팅되지 않았습니다.");
@@ -158,6 +236,31 @@ public final class KernelService {
             pulse.stop();
         }
         return result;
+    }
+
+    /**
+     * 이 호출이 커널 상태를 바꾸지 않는가.
+     *
+     * <p>{@code SCHEDULER}·{@code SWAPINFO}는 인자가 없을 때만 조회다. 인자가 붙으면
+     * 스케줄러를 갈아 끼우거나 교체 정책을 바꾸는 명령이 되므로 캐시 대상이 아니다.</p>
+     */
+    private static boolean isCacheable(SystemCallType type, String[] args) {
+        return switch (type) {
+            case PS, MEMINFO, UPTIME, FRAMETABLE, PAGETABLE, RES_INFO, DETECT -> true;
+            case SCHEDULER, SWAPINFO -> args.length == 0;
+            default -> false;
+        };
+    }
+
+    private static String cacheKey(SystemCallType type, String[] args) {
+        if (args.length == 0) {
+            return type.name();
+        }
+        StringBuilder key = new StringBuilder(type.name());
+        for (String arg : args) {
+            key.append('\0').append(arg);
+        }
+        return key.toString();
     }
 
     /**
@@ -220,16 +323,59 @@ public final class KernelService {
         return () -> refreshListeners.remove(listener);
     }
 
+    /**
+     * 화면에 보일 때만 도는 주기적 갱신 구독을 건다.
+     *
+     * <p>Dock 으로 최소화한 창, 아직 장면에 붙지 않은 화면은 갱신할 이유가 없다.
+     * 그런데도 1.1.0 은 최소화한 활성 상태 보기가 매초 표를 다시 채우고 게이지
+     * 스프링을 돌렸다 — 사용자에게는 보이지 않는 일이 CPU 만 먹고 있었다.</p>
+     *
+     * @param scope    이 갱신이 그리는 화면 노드
+     * @param listener 매 주기 FX 스레드에서 실행될 작업
+     * @return 해지 핸들
+     */
+    public Subscription onRefresh(Node scope, Runnable listener) {
+        Objects.requireNonNull(scope, "scope");
+        return onRefresh(() -> {
+            if (isShowing(scope)) {
+                listener.run();
+            }
+        });
+    }
+
+    /**
+     * 노드가 실제로 화면에 그려지고 있는가.
+     *
+     * <p>{@code Node.isVisible()}은 <b>자기 자신</b>의 플래그일 뿐이라 부모가 숨겨져
+     * 있어도 참이다. 창을 최소화하면 숨겨지는 것은 앱 화면이 아니라 그것을 담은
+     * 창이므로, 조상을 따라 올라가며 확인해야 한다.</p>
+     */
+    private static boolean isShowing(Node node) {
+        if (node.getScene() == null) {
+            return false;
+        }
+        for (Node current = node; current != null; current = current.getParent()) {
+            if (!current.isVisible()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void firePulse() {
-        // 콜백 안에서 구독을 해지하는 경우가 있으므로 복사본을 순회한다.
-        for (Runnable listener : List.copyOf(refreshListeners)) {
+        // 펄스가 바뀌면 지난 펄스에 받아 둔 답은 전부 버린다.
+        pulseCache.clear();
+        // CopyOnWriteArrayList 라 순회 중 해지가 일어나도 안전하다 — 복사본을 뜨지 않는다.
+        for (Runnable listener : refreshListeners) {
             listener.run();
         }
+        pulseCache.clear();
     }
 
     /** 커널을 내리고 펄스를 멈춘다. 애플리케이션 종료 시 호출한다. */
     public void shutdown() {
         pulse.stop();
+        pulseCache.clear();
         Kernel current = kernel;
         if (current != null) {
             current.close();
