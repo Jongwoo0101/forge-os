@@ -4,6 +4,7 @@ import forgeos.ui.Motion;
 import forgeos.ui.SpringValue;
 import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
+import javafx.scene.CacheHint;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
@@ -29,6 +30,20 @@ import javafx.util.Duration;
  * <p>{@code managed = false}로 두고 위치·크기를 직접 관리한다. 부모
  * ({@link WindowManager})가 레이아웃에 관여하면 스프링이 쓴 값을 다음 펄스에
  * 되돌려 버린다.</p>
+ *
+ * <h2>1.1.1 — 창을 옮기는 것은 레이아웃이 아니다</h2>
+ * <p>1.1.0 까지는 x·y·폭·높이 중 <b>무엇이 바뀌든</b> {@code setPrefSize} 와
+ * {@code resize} 를 함께 불렀다. 그래서 창을 옆으로 1px 미는 동안에도 창 안의
+ * 표·툴바·사이드바가 통째로 다시 배치됐다. 표가 든 창을 끌 때 눈에 띄게
+ * 끊기던 원인이 이것이다.</p>
+ *
+ * <p>이제 위치와 크기는 갈라져 있다({@link #commitBounds()}). 위치만 바뀌면
+ * {@code layoutX/Y} 만 건드리므로 자식은 자기가 움직였다는 사실조차 모른다.
+ * 크기가 실제로 바뀐 프레임에만 레이아웃이 돈다.</p>
+ *
+ * <p>여기에 더해, <b>움직이는 동안에는 창을 비트맵으로 캐시한다</b>. 창에는
+ * 반경 30px 짜리 그림자가 걸려 있어서, 캐시가 없으면 프레임마다 그 흐림을 다시
+ * 계산한다. 이동은 캐시된 그림을 옮기는 것으로 충분하다.</p>
  */
 public final class ForgeWindow extends VBox {
 
@@ -68,10 +83,24 @@ public final class ForgeWindow extends VBox {
     private final SpringValue springW;
     private final SpringValue springH;
 
+    /**
+     * 스프링 넷이 <b>공유하는</b> 프레임 후처리.
+     *
+     * <p>반드시 인스턴스 하나여야 한다. 스프링마다 {@code this::commitBounds} 를
+     * 새로 만들어 넘기면 서로 다른 객체가 되어 프레임당 네 번 실행되고, 이 클래스가
+     * 없애려던 문제가 그대로 돌아온다.</p>
+     */
+    private final Runnable boundsCommit = this::commitBounds;
+
     private double x;
     private double y;
     private double w;
     private double h;
+
+    /** 마지막으로 실제 레이아웃에 반영한 크기. 이 값과 같으면 다시 배치하지 않는다. */
+    private double appliedW = -1;
+    private double appliedH = -1;
+
 
     private State state = State.NORMAL;
     private double[] restoreBounds;
@@ -108,22 +137,11 @@ public final class ForgeWindow extends VBox {
         getStyleClass().add("forge-window");
         setManaged(false);
 
-        springX = new SpringValue(value -> {
-            x = value;
-            applyBounds();
-        });
-        springY = new SpringValue(value -> {
-            y = value;
-            applyBounds();
-        });
-        springW = new SpringValue(value -> {
-            w = value;
-            applyBounds();
-        });
-        springH = new SpringValue(value -> {
-            h = value;
-            applyBounds();
-        });
+        // sink 는 값만 받아 적는다. 화면 반영은 프레임당 한 번, commitBounds 가 한다.
+        springX = new SpringValue(value -> x = value).onFrame(boundsCommit);
+        springY = new SpringValue(value -> y = value).onFrame(boundsCommit);
+        springW = new SpringValue(value -> w = value).onFrame(boundsCommit);
+        springH = new SpringValue(value -> h = value).onFrame(boundsCommit);
 
         buildTitleBar(title);
 
@@ -174,11 +192,58 @@ public final class ForgeWindow extends VBox {
         applyBounds();
     }
 
+    /**
+     * 위치와 크기를 화면에 반영한다.
+     *
+     * <p>크기는 <b>실제로 달라졌을 때만</b> 건드린다. {@code setPrefSize} 와
+     * {@code resize} 는 창 안쪽 전체의 레이아웃을 다시 돌리게 만드는 호출이라,
+     * 값이 그대로인데 부르면 매 프레임 헛일을 시키는 셈이 된다.</p>
+     */
     private void applyBounds() {
         setLayoutX(x);
         setLayoutY(y);
-        setPrefSize(w, h);
-        resize(w, h);
+        if (w != appliedW || h != appliedH) {
+            appliedW = w;
+            appliedH = h;
+            setPrefSize(w, h);
+            resize(w, h);
+        }
+    }
+
+    /**
+     * 스프링이 움직인 프레임의 후처리. 넷이 공유하므로 프레임당 정확히 한 번 돈다.
+     *
+     * <p>스프링이 전부 멎었으면 여기서 캐시도 걷는다 — 정지 콜백을 네 군데 걸면
+     * 어느 것이 마지막인지 매번 따져야 하지만, "지금 움직이는 스프링이 있는가"는
+     * 언제 물어도 답이 하나다.</p>
+     */
+    private void commitBounds() {
+        applyBounds();
+        if (!isSpringing()) {
+            setMotionCache(false);
+        }
+    }
+
+    private boolean isSpringing() {
+        return springX.isActive() || springY.isActive()
+                || springW.isActive() || springH.isActive();
+    }
+
+    /**
+     * 움직이는 동안만 창을 비트맵으로 캐시한다.
+     *
+     * <p>창에는 큰 가우시안 그림자가 걸려 있다. 캐시가 없으면 창이 1px 움직일
+     * 때마다 그 흐림을 다시 굽는다. 반대로 <b>크기가 바뀌는 동안에는 켜면 안 된다</b> —
+     * 매 프레임 캐시가 무효화되어 굽는 비용만 한 번 더 드는 꼴이 되기 때문이다.</p>
+     *
+     * <p>"지금 켜져 있는가"를 따로 기억하지 않는다. {@link Motion} 의 여닫기 전환도
+     * 같은 플래그를 건드리기 때문에, 기억해 둔 값과 실제 상태가 어긋날 수 있다.
+     * 프로퍼티에 같은 값을 다시 넣는 것은 어차피 아무 일도 하지 않으므로,
+     * 상태를 하나 더 두는 것보다 매번 그냥 쓰는 편이 안전하다.</p>
+     */
+    private void setMotionCache(boolean on) {
+        setCacheHint(on ? CacheHint.SPEED : CacheHint.DEFAULT);
+        setCache(on);
     }
 
     /**
@@ -225,6 +290,8 @@ public final class ForgeWindow extends VBox {
                 return;
             }
             manager.focus(this);
+            // 끄는 동안 그림자를 매 프레임 다시 굽지 않도록 창을 비트맵으로 굳힌다.
+            setMotionCache(true);
             Point2D local = getParent().sceneToLocal(e.getSceneX(), e.getSceneY());
             // 잡은 지점을 기억한다. 중심으로 스냅시키면 손에서 창이 튀는 느낌이 난다.
             grabOffsetX = local.getX() - x;
@@ -255,7 +322,14 @@ public final class ForgeWindow extends VBox {
             e.consume();
         });
 
-        titleBar.setOnMouseReleased(e -> settleAfterDrag());
+        titleBar.setOnMouseReleased(e -> {
+            settleAfterDrag();
+            // 경계 밖이면 스프링이 돌아오는 중이므로 캐시를 유지한다.
+            // 그 경우의 해제는 commitBounds 가 맡는다.
+            if (!isSpringing()) {
+                setMotionCache(false);
+            }
+        });
         titleBar.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2) {
                 toggleZoom();
@@ -368,6 +442,8 @@ public final class ForgeWindow extends VBox {
             }
             manager.focus(this);
             resizing = true;
+            // 크기가 매 프레임 달라지므로 캐시는 굽는 비용만 늘린다.
+            setMotionCache(false);
             Point2D local = getParent().sceneToLocal(e.getSceneX(), e.getSceneY());
             resizeAnchorX = local.getX();
             resizeAnchorY = local.getY();
@@ -512,6 +588,11 @@ public final class ForgeWindow extends VBox {
     }
 
     private void springTo(double targetX, double targetY, double targetW, double targetH) {
+        // 크기가 함께 변하는 전환(확대·최소화)은 어차피 매 프레임 레이아웃이 돈다.
+        // 그런 프레임에서 비트맵까지 다시 구우면 느려지기만 한다.
+        boolean sizeChanges = targetW != w || targetH != h;
+        setMotionCache(!sizeChanges);
+
         springX.tune(Motion.RESPONSE_STANDARD, Motion.DAMPING_STANDARD);
         springY.tune(Motion.RESPONSE_STANDARD, Motion.DAMPING_STANDARD);
         springW.tune(Motion.RESPONSE_STANDARD, Motion.DAMPING_STANDARD);
