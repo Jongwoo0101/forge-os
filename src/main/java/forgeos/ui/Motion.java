@@ -5,6 +5,7 @@ import javafx.animation.Interpolator;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
 import javafx.animation.Timeline;
+import javafx.scene.CacheHint;
 import javafx.scene.Node;
 import javafx.util.Duration;
 
@@ -32,8 +33,14 @@ public final class Motion {
     /** 페이드 표준 시간. */
     public static final Duration FADE = Duration.millis(320);
 
-    /** 부팅 단계 전환 페이드 — 장면이 통째로 바뀌므로 조금 더 길게. */
-    public static final Duration FADE_SCENE = Duration.millis(620);
+    /**
+     * 부팅 단계 전환 페이드 — 장면이 통째로 바뀌므로 조금 더 길게.
+     *
+     * <p><b>1.1.1</b> — 620ms에서 400ms로. 부팅에서 이 값은 세 번 쓰이므로
+     * (콘솔 퇴장·데스크탑 등장, 그리고 그 사이) 220ms 를 줄이면 체감은 0.6초쯤
+     * 짧아진다. 400ms 는 여전히 "장면이 바뀌었다"로 읽히는 길이다.</p>
+     */
+    public static final Duration FADE_SCENE = Duration.millis(400);
 
     /**
      * 감속 기반 easing.
@@ -47,6 +54,25 @@ public final class Motion {
     public static final Interpolator EASE_IN = Interpolator.SPLINE(0.7, 0, 0.84, 0);
 
     private Motion() {
+    }
+
+    /**
+     * 애니메이션이 도는 동안만 노드를 비트맵으로 굳힌다.
+     *
+     * <p>ForgeOS 에서 크기·투명도를 함께 움직이는 대상은 대부분 유리 재질에 큰
+     * 그림자가 걸린 표면(창·오버레이)이다. 캐시가 없으면 그 그림자를 프레임마다
+     * 다시 굽는데, 창을 여는 240ms 동안 그 비용이 통째로 눈에 보인다 —
+     * "앱이 늦게 뜬다"는 체감의 상당 부분이 실은 이 굽는 시간이다.</p>
+     *
+     * <p>{@link CacheHint#SPEED} 는 확대·축소 중에도 캐시를 재사용하라는 뜻이라
+     * 애니메이션 도중 살짝 부드러워 보일 수 있다. 끝나면 반드시 되돌린다.</p>
+     *
+     * @param node 대상
+     * @param on   켜기/끄기
+     */
+    private static void motionCache(Node node, boolean on) {
+        node.setCacheHint(on ? CacheHint.SPEED : CacheHint.DEFAULT);
+        node.setCache(on);
     }
 
     /**
@@ -105,6 +131,7 @@ public final class Motion {
         node.setScaleX(fromScale);
         node.setScaleY(fromScale);
         node.setVisible(true);
+        motionCache(node, true);
 
         Timeline timeline = new Timeline(
                 new KeyFrame(Duration.ZERO,
@@ -115,6 +142,7 @@ public final class Motion {
                         new KeyValue(node.opacityProperty(), 1, EASE_OUT),
                         new KeyValue(node.scaleXProperty(), 1, EASE_OUT),
                         new KeyValue(node.scaleYProperty(), 1, EASE_OUT)));
+        timeline.setOnFinished(e -> motionCache(node, false));
         timeline.play();
     }
 
@@ -129,6 +157,7 @@ public final class Motion {
      * @param onFinish 완료 후 작업 ({@code null} 허용)
      */
     public static void dematerialize(Node node, double toScale, Duration duration, Runnable onFinish) {
+        motionCache(node, true);
         Timeline timeline = new Timeline(
                 new KeyFrame(Duration.ZERO,
                         new KeyValue(node.opacityProperty(), node.getOpacity()),
@@ -139,6 +168,7 @@ public final class Motion {
                         new KeyValue(node.scaleXProperty(), toScale, EASE_IN),
                         new KeyValue(node.scaleYProperty(), toScale, EASE_IN)));
         timeline.setOnFinished(e -> {
+            motionCache(node, false);
             node.setVisible(false);
             if (onFinish != null) {
                 onFinish.run();
