@@ -1,6 +1,6 @@
 # ForgeOS Source Dump
 
-총 소스 파일 수 : **39개**
+총 소스 파일 수 : **45개**
 
 - 모듈 : `forgeOS` (os)
 - 포함 확장자 : `.java`, `.css`
@@ -14,7 +14,11 @@
 - `src/main/java/forgeos/app/AppCatalog.java`
 - `src/main/java/forgeos/app/AppContext.java`
 - `src/main/java/forgeos/app/AppInstance.java`
+- `src/main/java/forgeos/app/AppProcessTable.java`
 - `src/main/java/forgeos/app/ForgeApp.java`
+- `src/main/java/forgeos/app/browser/BrowserView.java`
+- `src/main/java/forgeos/app/browser/FirefoxApp.java`
+- `src/main/java/forgeos/app/browser/StartPage.java`
 - `src/main/java/forgeos/app/deadlock/DeadlockResolverApp.java`
 - `src/main/java/forgeos/app/deadlock/DeadlockResolverView.java`
 - `src/main/java/forgeos/app/deadlock/WaitForGraphView.java`
@@ -23,6 +27,8 @@
 - `src/main/java/forgeos/app/monitor/ActivityMonitorApp.java`
 - `src/main/java/forgeos/app/monitor/ActivityMonitorView.java`
 - `src/main/java/forgeos/app/monitor/DonutChart.java`
+- `src/main/java/forgeos/app/notepad/NotepadApp.java`
+- `src/main/java/forgeos/app/notepad/NotepadView.java`
 - `src/main/java/forgeos/app/terminal/TerminalApp.java`
 - `src/main/java/forgeos/app/terminal/TerminalView.java`
 - `src/main/java/forgeos/boot/BootConsole.java`
@@ -218,9 +224,11 @@ public final class Launcher {
 ```java
 package forgeos.app;
 
+import forgeos.app.browser.FirefoxApp;
 import forgeos.app.deadlock.DeadlockResolverApp;
 import forgeos.app.finder.FinderApp;
 import forgeos.app.monitor.ActivityMonitorApp;
+import forgeos.app.notepad.NotepadApp;
 import forgeos.app.terminal.TerminalApp;
 
 import java.util.List;
@@ -230,8 +238,12 @@ import java.util.List;
  *
  * <p>목록의 <b>순서가 곧 Dock의 순서</b>다. 터미널이 맨 앞인 이유는 이 시뮬레이터에서
  * 모든 것이 결국 명령어로 되기 때문이고, 교착 상태 관리자가 맨 뒤인 이유는 앞의
- * 셋으로 상황을 만든 다음에야 쓸 일이 생기기 때문이다. Dock은 사용 빈도 순이
+ * 앱들로 상황을 만든 다음에야 쓸 일이 생기기 때문이다. Dock은 사용 빈도 순이
  * 아니라 <b>작업 순서</b>대로 놓여 있을 때 길잡이가 된다.</p>
+ *
+ * <p>1.1.0 에서 둘이 늘었다. 메모장은 Finder 바로 뒤다 — 파일을 찾는 일과 파일을
+ * 쓰는 일은 이어진 하나의 동작이기 때문이다. Firefox 는 커널과 무관한 유일한 앱이라
+ * 커널 계열 앱들과 교착 상태 관리자 사이에 선을 긋듯 놓았다.</p>
  */
 public final class AppCatalog {
 
@@ -248,6 +260,8 @@ public final class AppCatalog {
                 new TerminalApp(),
                 new ActivityMonitorApp(),
                 new FinderApp(),
+                new NotepadApp(),
+                new FirefoxApp(),
                 new DeadlockResolverApp());
     }
 }
@@ -308,7 +322,194 @@ public record AppInstance(Node view, Runnable dispose) {
 
 ---
 
-# 6. ForgeApp.java
+# 6. AppProcessTable.java
+
+**Path**
+`src/main/java/forgeos/app/AppProcessTable.java`
+
+```java
+package forgeos.app;
+
+import forgeframework.process.ExecResultDto;
+import forgeframework.process.ProcessControlBlock;
+import forgeframework.process.ProcessDto;
+import forgeframework.process.ProcessState;
+import forgeframework.syscall.SystemCallResult;
+import forgeframework.syscall.SystemCallType;
+import forgeos.core.KernelService;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
+
+/**
+ * 열려 있는 앱 창과 커널 프로세스를 1:1로 묶어 두는 표.
+ *
+ * <h2>왜 필요했나</h2>
+ * <p>{@code 1.1.0}까지 ForgeOS의 앱 창은 순수 JavaFX 노드였다. Firefox를 여섯 개
+ * 열어도 커널은 그 사실을 몰랐고, 활성 상태 보기의 프로세스 표는 비어 있었으며
+ * 메모리 게이지도 0이었다. <b>운영체제 시뮬레이터의 데스크탑에서 앱을 실행했는데
+ * 그 운영체제가 모른다</b>는 것은 설명하기 어려운 상태다. 창을 열면 프로세스가
+ * 생기고 메모리를 먹는다 — 여기서부터가 데스크탑이다.</p>
+ *
+ * <h2>앱 프로세스는 CPU를 두고 다투지 않는다</h2>
+ * <p>커널의 프로세스는 전부 "버스트 시간만큼 CPU를 쓰고 끝나는 배치 작업"이다.
+ * GUI 앱은 그런 물건이 아니다 — 끝나지 않고, 대부분의 시간을 <b>입력을 기다리며</b>
+ * 보낸다. 그래서 앱 프로세스는 만들자마자 {@code io_req … keyboard}로 키보드
+ * 대기열에 넣어 {@code WAITING}으로 재운다.</p>
+ *
+ * <p>이것은 편법이 아니라 실제 모델과 같다. 그리고 재우지 않으면 FCFS에서
+ * <b>첫 번째로 열린 앱이 CPU를 영원히 붙들고</b> 사용자가 만든 프로세스가 하나도
+ * 진행되지 않는다. 비선점 스케줄러에 끝나지 않는 프로세스를 올리면 그렇게 된다.</p>
+ *
+ * <p>터미널에서 {@code type} 을 치면 키보드 인터럽트가 대기열의 맨 앞을 깨우므로
+ * 앱 프로세스 하나가 READY로 돌아올 수 있다. 그래서 매 갱신 펄스마다
+ * {@link #sweep()}이 <b>다시 재운다</b> — 입력을 처리하고 다시 기다림으로
+ * 돌아가는 GUI 앱의 실제 동작과 같다.</p>
+ *
+ * <h2>프로세스를 죽이면 창이 닫힌다</h2>
+ * <p>활성 상태 보기에서 {@code firefox} 프로세스를 강제 종료하면 Firefox 창이
+ * 닫힌다. 표와 화면이 같은 사실을 가리키게 하려면 방향이 양쪽으로 다 통해야 한다.
+ * 한쪽으로만 통하면 표는 장식이 된다.</p>
+ */
+public final class AppProcessTable {
+
+    /**
+     * 앱 프로세스의 버스트 시간.
+     *
+     * <p>GUI 앱은 끝나지 않으므로 실제로는 아무 값이나 상관없다. 그럼에도 큰 값을
+     * 두는 이유는, 표의 진행 막대가 거의 비어 있는 채로 남아 "이건 끝나려고 도는
+     * 일이 아니다"를 보여 주기 때문이다.</p>
+     */
+    private static final long APP_BURST_TIME = 999;
+
+    /** 앱 프로세스의 우선순위. 가장 낮게 둬서 어쩌다 깨어나도 사용자 프로세스를 밀지 않는다. */
+    private static final int APP_PRIORITY = ProcessControlBlock.MAX_PRIORITY_VALUE;
+
+    /** 앱 프로세스를 재워 둘 장치. 키보드를 고른 이유는 GUI 앱이 실제로 기다리는 것이 입력이기 때문이다. */
+    private static final String PARK_DEVICE = "keyboard";
+
+    private final KernelService kernelService;
+    private final Consumer<String> onProcessLost;
+
+    /** 앱 id → 커널 PID. 창이 열려 있는 동안만 항목이 존재한다. */
+    private final Map<String, Integer> pidByAppId = new HashMap<>();
+
+    /**
+     * 표를 만들고 갱신 펄스에 붙는다.
+     *
+     * @param kernelService 시스템 콜 통로
+     * @param onProcessLost 창은 열려 있는데 프로세스가 사라졌을 때 호출된다 (창을 닫으라는 뜻)
+     */
+    public AppProcessTable(KernelService kernelService, Consumer<String> onProcessLost) {
+        this.kernelService = kernelService;
+        this.onProcessLost = onProcessLost;
+        kernelService.onRefresh(this::sweep);
+    }
+
+    /**
+     * 앱 창이 열렸다. 커널에 프로세스를 만들고 메모리를 할당한 뒤 재운다.
+     *
+     * <p>커널이 아직 없거나 이미 내려갔으면 조용히 아무것도 하지 않는다. 데스크탑은
+     * 커널 없이도 떠 있어야 한다 — {@code shutdown} 뒤에 창을 여는 것이 예외로
+     * 터지면 종료 화면에서 앱이 죽는다.</p>
+     *
+     * @param app 열린 앱
+     */
+    public void launch(ForgeApp app) {
+        if (pidByAppId.containsKey(app.id())) {
+            return;
+        }
+        SystemCallResult exec = kernelService.call(SystemCallType.EXEC,
+                app.id(), String.valueOf(APP_BURST_TIME), String.valueOf(APP_PRIORITY));
+        if (!exec.isSuccess()) {
+            return;
+        }
+        int pid = exec.dataAs(ExecResultDto.class).pid();
+        pidByAppId.put(app.id(), pid);
+
+        if (app.memoryFootprint() > 0) {
+            // 실패해도(프레임이 꽉 찼어도) 프로세스는 그대로 둔다. 메모리가 모자라
+            // 앱이 안 열리는 것보다, 열리되 힙이 비어 있는 편이 낫다.
+            kernelService.call(SystemCallType.MALLOC,
+                    String.valueOf(pid), String.valueOf(app.memoryFootprint()));
+        }
+        park(pid);
+    }
+
+    /**
+     * 앱 창이 닫혔다. 프로세스를 종료한다.
+     *
+     * <p>메모리는 따로 반납하지 않는다 — 커널이 프로세스 종료 리스너에서
+     * {@code releaseProcess}로 주소 공간을 통째로 회수한다.</p>
+     *
+     * @param appId 닫힌 앱의 id
+     */
+    public void terminate(String appId) {
+        Integer pid = pidByAppId.remove(appId);
+        if (pid != null) {
+            kernelService.call(SystemCallType.KILL, String.valueOf(pid));
+        }
+    }
+
+    /**
+     * 이 앱이 지금 쓰고 있는 PID.
+     *
+     * @param appId 앱 id
+     * @return PID. 열려 있지 않으면 {@code -1}
+     */
+    public int pidOf(String appId) {
+        return pidByAppId.getOrDefault(appId, -1);
+    }
+
+    /**
+     * 매 갱신 펄스마다 앱 프로세스의 상태를 살핀다.
+     *
+     * <ul>
+     *   <li>깨어나 있으면 다시 재운다 (입력을 처리하고 대기로 돌아가는 것과 같다)</li>
+     *   <li>사라졌으면 창을 닫으라고 알린다 (사용자가 표에서 강제 종료한 경우)</li>
+     * </ul>
+     */
+    private void sweep() {
+        if (pidByAppId.isEmpty()) {
+            return;
+        }
+        SystemCallResult ps = kernelService.call(SystemCallType.PS);
+        if (!ps.isSuccess()) {
+            return;
+        }
+        Map<Integer, ProcessState> stateByPid = new HashMap<>();
+        for (ProcessDto process : ps.dataAsList(ProcessDto.class)) {
+            stateByPid.put(process.pid(), process.state());
+        }
+
+        List<String> lost = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : Map.copyOf(pidByAppId).entrySet()) {
+            ProcessState state = stateByPid.get(entry.getValue());
+            if (state == null || state == ProcessState.TERMINATED) {
+                lost.add(entry.getKey());
+            } else if (state != ProcessState.WAITING) {
+                park(entry.getValue());
+            }
+        }
+
+        for (String appId : lost) {
+            pidByAppId.remove(appId);
+            onProcessLost.accept(appId);
+        }
+    }
+
+    private void park(int pid) {
+        kernelService.call(SystemCallType.IO_REQ, String.valueOf(pid), PARK_DEVICE);
+    }
+}
+```
+
+---
+
+# 7. ForgeApp.java
 
 **Path**
 `src/main/java/forgeos/app/ForgeApp.java`
@@ -361,6 +562,22 @@ public interface ForgeApp {
     double preferredHeight();
 
     /**
+     * 이 앱이 커널에서 차지할 힙 크기(바이트).
+     *
+     * <p>창이 열리면 {@code AppProcessTable}이 이만큼 {@code malloc}한다.
+     * 기본 프레임 크기가 4바이트짜리 16장뿐인 커널이므로 값은 아주 작아야 한다 —
+     * 여기서 넉넉하게 잡으면 앱 몇 개를 여는 것만으로 물리 메모리가 차서
+     * 사용자가 만드는 프로세스가 곧바로 스왑으로 밀린다.</p>
+     *
+     * <p>기본값 4바이트는 프레임 딱 한 장이다. 더 무거운 앱만 재정의한다.</p>
+     *
+     * @return 할당할 바이트 수. 0이면 할당하지 않는다
+     */
+    default int memoryFootprint() {
+        return 4;
+    }
+
+    /**
      * 앱 화면을 만든다. 창이 열릴 때마다 한 번 호출된다.
      *
      * @param context 커널 접근과 창 관리자
@@ -372,7 +589,506 @@ public interface ForgeApp {
 
 ---
 
-# 7. DeadlockResolverApp.java
+# 8. BrowserView.java
+
+**Path**
+`src/main/java/forgeos/app/browser/BrowserView.java`
+
+```java
+package forgeos.app.browser;
+
+import forgeos.ui.Glyphs;
+import javafx.collections.ListChangeListener;
+import javafx.concurrent.Worker;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.control.Button;
+import javafx.scene.control.ProgressBar;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
+import javafx.scene.web.WebEngine;
+import javafx.scene.web.WebHistory;
+import javafx.scene.web.WebView;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Pattern;
+
+/**
+ * 브라우저 화면 — 탭 · 주소창 · 진행 표시.
+ *
+ * <h2>도구 모음은 항상 "선택된 탭"을 비춘다</h2>
+ * <p>탭마다 주소창을 두면 화면이 두 줄로 두꺼워지고, 탭 하나에 하나씩
+ * 프로퍼티를 바인딩하면 탭을 옮길 때마다 바인딩을 끊고 다시 걸어야 한다.
+ * 대신 각 탭이 자기 상태가 바뀔 때마다 {@link #syncToolbar()}를 부르고,
+ * 도구 모음은 <b>지금 선택된 탭만</b> 읽는다. 바인딩이 없으니 끊을 것도 없다.</p>
+ *
+ * <h2>주소창은 주소도 검색도 받는다</h2>
+ * <p>{@code://}가 있으면 그대로, 점이 박힌 한 덩어리면 {@code https://}를 붙이고,
+ * 나머지는 검색어로 본다. 사람이 주소창에 무엇을 칠지 고민하지 않게 하려는 것이
+ * 현대 브라우저가 주소창과 검색창을 합친 이유다.</p>
+ */
+final class BrowserView extends BorderPane {
+
+    /** {@code scheme://} 로 시작하는가. */
+    private static final Pattern SCHEME = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*://.*");
+
+    /** 공백 없이 점이 박힌 한 덩어리 — 도메인으로 본다. */
+    private static final Pattern HOSTLIKE = Pattern.compile("^[^\\s/:]+\\.[^\\s/:]{2,}(:\\d+)?(/.*)?$");
+
+    /** 검색 엔진. 질의를 뒤에 붙이면 된다. */
+    private static final String SEARCH = "https://duckduckgo.com/?q=";
+
+    private final TabPane tabs = new TabPane();
+    private final TextField address = new TextField();
+    private final ProgressBar progress = new ProgressBar();
+
+    private final Button backButton =
+            new Button(null, Glyphs.stroked(Glyphs.ARROW_LEFT, 15, "button-glyph"));
+    private final Button forwardButton =
+            new Button(null, Glyphs.stroked(Glyphs.ARROW_RIGHT, 15, "button-glyph"));
+    private final Button reloadButton =
+            new Button(null, Glyphs.stroked(Glyphs.REFRESH, 14, "button-glyph"));
+    private final Node lockGlyph = Glyphs.stroked(Glyphs.LOCK, 13, "browser-lock");
+
+    BrowserView() {
+        getStyleClass().add("browser");
+
+        tabs.getStyleClass().add("browser-tabs");
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.ALL_TABS);
+        tabs.getSelectionModel().selectedItemProperty().addListener((obs, old, tab) -> syncToolbar());
+
+        // 마지막 탭까지 닫히면 빈 창이 남는다. 브라우저가 아니라 고장으로 보인다.
+        tabs.getTabs().addListener((ListChangeListener<Tab>) change -> {
+            if (tabs.getTabs().isEmpty()) {
+                openTab(null);
+            }
+        });
+
+        setTop(buildChrome());
+        setCenter(tabs);
+
+        openTab(null);
+    }
+
+    // ────────────────────────────── 구성 ──────────────────────────────
+
+    private VBox buildChrome() {
+        backButton.getStyleClass().add("browser-nav");
+        backButton.setOnAction(e -> go(-1));
+
+        forwardButton.getStyleClass().add("browser-nav");
+        forwardButton.setOnAction(e -> go(1));
+
+        reloadButton.getStyleClass().add("browser-nav");
+        reloadButton.setOnAction(e -> reloadOrStop());
+
+        Button home = new Button(null, Glyphs.stroked(Glyphs.HOME, 15, "button-glyph"));
+        home.getStyleClass().add("browser-nav");
+        home.setOnAction(e -> {
+            BrowserTab tab = current();
+            if (tab != null) {
+                tab.loadStartPage();
+            }
+        });
+
+        address.getStyleClass().addAll("field", "browser-address");
+        address.setPromptText("검색하거나 주소를 입력하세요");
+        HBox.setHgrow(address, Priority.ALWAYS);
+        address.setOnAction(e -> navigate(address.getText()));
+
+        HBox addressBox = new HBox(lockGlyph, address);
+        addressBox.getStyleClass().add("browser-address-box");
+        addressBox.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(addressBox, Priority.ALWAYS);
+
+        Button newTab = new Button(null, Glyphs.stroked(Glyphs.PLUS, 15, "button-glyph"));
+        newTab.getStyleClass().add("browser-nav");
+        newTab.setOnAction(e -> openTab(null));
+
+        HBox bar = new HBox(backButton, forwardButton, reloadButton, home, addressBox, newTab);
+        bar.getStyleClass().addAll("toolbar", "browser-toolbar");
+        bar.setAlignment(Pos.CENTER_LEFT);
+
+        progress.getStyleClass().add("browser-progress");
+        progress.setMaxWidth(Double.MAX_VALUE);
+        progress.setVisible(false);
+        progress.setManaged(false);
+
+        return new VBox(bar, progress);
+    }
+
+    // ────────────────────────────── 동작 ──────────────────────────────
+
+    private BrowserTab openTab(String url) {
+        BrowserTab tab = new BrowserTab();
+        tabs.getTabs().add(tab);
+        tabs.getSelectionModel().select(tab);
+        if (url == null) {
+            tab.loadStartPage();
+        } else {
+            tab.engine.load(url);
+        }
+        return tab;
+    }
+
+    private void navigate(String input) {
+        BrowserTab tab = current();
+        if (tab == null) {
+            return;
+        }
+        String typed = input == null ? "" : input.trim();
+        if (typed.isEmpty()) {
+            return;
+        }
+        if (StartPage.ADDRESS.equals(typed)) {
+            tab.loadStartPage();
+            return;
+        }
+        tab.engine.load(resolve(typed));
+    }
+
+    /**
+     * 주소창에 친 것을 실제 URL 로 바꾼다.
+     *
+     * @param typed 사용자가 친 문자열 (공백 제거된 상태)
+     * @return 이동할 URL
+     */
+    private static String resolve(String typed) {
+        if (SCHEME.matcher(typed).matches()) {
+            return typed;
+        }
+        if (typed.startsWith("localhost") || HOSTLIKE.matcher(typed).matches()) {
+            return "https://" + typed;
+        }
+        return SEARCH + URLEncoder.encode(typed, StandardCharsets.UTF_8);
+    }
+
+    private void go(int offset) {
+        BrowserTab tab = current();
+        if (tab == null) {
+            return;
+        }
+        WebHistory history = tab.engine.getHistory();
+        int target = history.getCurrentIndex() + offset;
+        if (target >= 0 && target < history.getEntries().size()) {
+            history.go(offset);
+        }
+    }
+
+    private void reloadOrStop() {
+        BrowserTab tab = current();
+        if (tab == null) {
+            return;
+        }
+        if (tab.engine.getLoadWorker().getState() == Worker.State.RUNNING) {
+            tab.engine.getLoadWorker().cancel();
+        } else {
+            tab.engine.reload();
+        }
+    }
+
+    private BrowserTab current() {
+        Tab selected = tabs.getSelectionModel().getSelectedItem();
+        return (selected instanceof BrowserTab tab) ? tab : null;
+    }
+
+    /** 선택된 탭의 상태를 도구 모음에 반영한다. 탭이 스스로 자기 변화를 알려 올 때 호출된다. */
+    private void syncToolbar() {
+        BrowserTab tab = current();
+        if (tab == null) {
+            return;
+        }
+        String location = tab.displayAddress();
+
+        // 사용자가 주소창에 무언가 치고 있는 중이면 밑에서 글자를 바꿔치기하지 않는다.
+        if (!address.isFocused()) {
+            address.setText(location);
+        }
+        boolean secure = location.startsWith("https://") || location.startsWith(StartPage.ADDRESS);
+        lockGlyph.setVisible(secure);
+        lockGlyph.setManaged(secure);
+
+        WebHistory history = tab.engine.getHistory();
+        backButton.setDisable(history.getCurrentIndex() <= 0);
+        forwardButton.setDisable(history.getCurrentIndex() >= history.getEntries().size() - 1);
+
+        boolean loading = tab.engine.getLoadWorker().getState() == Worker.State.RUNNING;
+        progress.setVisible(loading);
+        progress.setManaged(loading);
+        progress.setProgress(tab.engine.getLoadWorker().getProgress());
+    }
+
+    void dispose() {
+        // WebView 는 창이 사라지면 함께 GC 대상이 된다. 다만 로딩 중인 요청은
+        // 명시적으로 끊어 준다 — 닫은 페이지가 네트워크를 계속 쓰고 있을 이유가 없다.
+        for (Tab tab : tabs.getTabs()) {
+            if (tab instanceof BrowserTab browserTab) {
+                browserTab.engine.getLoadWorker().cancel();
+                browserTab.engine.load(null);
+            }
+        }
+    }
+
+    // ────────────────────────────── 탭 ──────────────────────────────
+
+    /**
+     * 탭 하나 — {@link WebView} 와 그 엔진.
+     *
+     * <p>{@code final} 로 두는 것이 중요하다. 생성자가 자기 자신의 메서드를
+     * 부르는데({@code setContent} 등) 상속 가능한 클래스에서 그러면
+     * {@code -Xlint:this-escape} 가 경고를 낸다. 이 프로젝트의 기준선은 경고 0건이다.</p>
+     */
+    private final class BrowserTab extends Tab {
+
+        private final WebView web = new WebView();
+        private final WebEngine engine = web.getEngine();
+
+        BrowserTab() {
+            getStyleClass().add("browser-page");
+            setContent(web);
+            setText("새 탭");
+
+            engine.titleProperty().addListener((obs, old, title) -> setText(tabLabel(title)));
+            engine.locationProperty().addListener((obs, old, now) -> {
+                setText(tabLabel(engine.getTitle()));
+                notifyChanged();
+            });
+            engine.getLoadWorker().stateProperty().addListener((obs, old, now) -> notifyChanged());
+            engine.getLoadWorker().progressProperty().addListener((obs, old, now) -> notifyChanged());
+            engine.getHistory().getEntries().addListener(
+                    (ListChangeListener<WebHistory.Entry>) change -> notifyChanged());
+
+            // target="_blank" 나 window.open 은 새 창이 아니라 새 탭으로 받는다.
+            // 데스크탑 안에서 창을 또 띄우면 우리 창 관리자가 모르는 창이 생긴다.
+            engine.setCreatePopupHandler(features -> openTab(null).engine);
+        }
+
+        private void loadStartPage() {
+            engine.loadContent(StartPage.html());
+            setText("새 탭");
+            notifyChanged();
+        }
+
+        /** 주소창에 보여 줄 문자열. 내장 시작 페이지는 실제 URL 이 없다. */
+        private String displayAddress() {
+            String location = engine.getLocation();
+            return (location == null || location.isBlank() || "about:blank".equals(location))
+                    ? StartPage.ADDRESS
+                    : location;
+        }
+
+        private String tabLabel(String title) {
+            if (title != null && !title.isBlank()) {
+                return title.length() > 24 ? title.substring(0, 23) + "…" : title;
+            }
+            String location = displayAddress();
+            return StartPage.ADDRESS.equals(location) ? "새 탭" : location;
+        }
+
+        private void notifyChanged() {
+            if (tabs.getSelectionModel().getSelectedItem() == this) {
+                syncToolbar();
+            }
+        }
+    }
+}
+```
+
+---
+
+# 9. FirefoxApp.java
+
+**Path**
+`src/main/java/forgeos/app/browser/FirefoxApp.java`
+
+```java
+package forgeos.app.browser;
+
+import forgeos.app.AppContext;
+import forgeos.app.AppInstance;
+import forgeos.app.ForgeApp;
+import forgeos.ui.Glyphs;
+
+/**
+ * Firefox — ForgeOS의 기본 웹 브라우저.
+ *
+ * <h2>엔진에 관한 정직한 설명</h2>
+ * <p>이 앱은 Mozilla 의 Gecko 를 품고 있지 않다. JavaFX 가 들고 있는 렌더링
+ * 엔진은 {@code javafx.web} 의 <b>WebKit</b> 하나뿐이고, 자바 프로세스 안에서
+ * Gecko 를 띄울 방법은 없다. 그래서 이 앱은 "ForgeOS 창 안에서 도는 브라우저"이며,
+ * 이름과 자리(기본 브라우저)를 Firefox 에게 준 것이다. 호스트에 설치된 진짜
+ * Firefox 를 실행하는 길도 있었지만, 그러면 창이 ForgeOS 바깥으로 튀어나가
+ * 가상 데스크탑이라는 전제가 깨진다.</p>
+ */
+public final class FirefoxApp implements ForgeApp {
+
+    @Override
+    public String id() {
+        return "firefox";
+    }
+
+    @Override
+    public String title() {
+        return "Firefox";
+    }
+
+    @Override
+    public String iconPath() {
+        return Glyphs.BROWSER;
+    }
+
+    @Override
+    public double preferredWidth() {
+        return 1040;
+    }
+
+    @Override
+    public double preferredHeight() {
+        return 660;
+    }
+
+    /**
+     * 브라우저는 이 데스크탑에서 가장 무거운 앱이다.
+     *
+     * <p>농담이 아니라 사실이다 — 다른 다섯 앱은 커널의 표를 그려 주기만 하지만
+     * 이 앱만 WebKit 엔진을 통째로 들고 있다. 활성 상태 보기에서 힙 게이지가
+     * Firefox 하나에 눈에 띄게 움직이는 것은 그래서 옳은 그림이다.</p>
+     *
+     * @return 8바이트 (프레임 두 장)
+     */
+    @Override
+    public int memoryFootprint() {
+        return 8;
+    }
+
+    @Override
+    public AppInstance launch(AppContext context) {
+        BrowserView view = new BrowserView();
+        return new AppInstance(view, view::dispose);
+    }
+}
+```
+
+---
+
+# 10. StartPage.java
+
+**Path**
+`src/main/java/forgeos/app/browser/StartPage.java`
+
+```java
+package forgeos.app.browser;
+
+/**
+ * 브라우저의 시작 페이지 HTML.
+ *
+ * <h2>왜 원격 주소가 아니라 내장 문서인가</h2>
+ * <p>홈을 실제 사이트로 두면 네트워크가 없는 자리(발표장·기내·사내망)에서 앱을
+ * 열자마자 오류 화면이 뜬다. 브라우저를 처음 켠 사람이 가장 먼저 보는 화면이
+ * 오류인 것은 앱이 고장 난 것과 구별되지 않는다. 내장 문서는 오프라인에서도
+ * 항상 뜨고, 링크를 누르는 순간에야 네트워크가 필요해진다.</p>
+ *
+ * <h2>이 문서만은 테마를 따르지 않는다</h2>
+ * <p>WebView 안쪽은 ForgeOS 의 스타일시트가 닿지 않는 별개의 문서 세계다.
+ * 토큰을 넘겨 두 벌을 만들 수도 있지만, 터미널·부팅 화면과 같은 이유로
+ * 여기는 고정 다크로 둔다 — 웹 페이지가 어떤 색이든 브라우저의 시작 화면은
+ * 자기 색을 갖는 편이 "지금 보는 것이 웹이 아니라 브라우저"임을 알려 준다.</p>
+ */
+final class StartPage {
+
+    /** 주소창에 표시할 가짜 주소. 내장 문서라 실제 URL 이 없다. */
+    static final String ADDRESS = "forge://start";
+
+    private StartPage() {
+    }
+
+    /**
+     * 시작 페이지 문서를 만든다.
+     *
+     * @return 완결된 HTML 문서
+     */
+    static String html() {
+        return """
+                <!doctype html>
+                <html lang="ko">
+                <head>
+                <meta charset="utf-8">
+                <title>Firefox — ForgeOS</title>
+                <style>
+                  * { box-sizing: border-box; }
+                  body {
+                    margin: 0; min-height: 100vh;
+                    display: flex; flex-direction: column;
+                    align-items: center; justify-content: center;
+                    background: radial-gradient(1200px 600px at 50% -10%, #1b2230 0%, #0a0d12 60%);
+                    color: #eceff4;
+                    font-family: -apple-system, "Helvetica Neue", "Apple SD Gothic Neo", sans-serif;
+                  }
+                  .mark { font-size: 44px; letter-spacing: -1px; font-weight: 700; }
+                  .mark span { color: #ff6b4a; }
+                  .sub { margin-top: 8px; color: #6a7383; font-size: 13px; }
+                  form { margin: 30px 0 34px; width: min(560px, 82vw); }
+                  input {
+                    width: 100%; padding: 13px 18px; border-radius: 11px;
+                    border: 1px solid rgba(255,255,255,0.10);
+                    background: rgba(0,0,0,0.35); color: #eceff4; font-size: 15px;
+                    outline: none;
+                  }
+                  input:focus { border-color: rgba(34,211,238,0.45); }
+                  .tiles {
+                    display: grid; grid-template-columns: repeat(3, 152px);
+                    gap: 12px;
+                  }
+                  a.tile {
+                    display: block; padding: 16px 14px; border-radius: 12px;
+                    background: rgba(255,255,255,0.04);
+                    border: 1px solid rgba(255,255,255,0.07);
+                    color: #eceff4; text-decoration: none;
+                  }
+                  a.tile:hover { background: rgba(255,255,255,0.09); }
+                  a.tile b { display: block; font-size: 13.5px; }
+                  a.tile em { display: block; margin-top: 3px; font-style: normal;
+                              font-size: 11px; color: #6a7383; }
+                  footer { margin-top: 34px; color: #4d5563; font-size: 11px; }
+                </style>
+                </head>
+                <body>
+                  <div class="mark">Fire<span>fox</span></div>
+                  <div class="sub">ForgeOS 기본 브라우저 · WebKit 렌더링</div>
+                  <form action="https://duckduckgo.com/" method="get">
+                    <input name="q" autofocus placeholder="검색하거나 주소를 입력하세요">
+                  </form>
+                  <div class="tiles">
+                    <a class="tile" href="https://www.mozilla.org/ko/firefox/">
+                      <b>Mozilla</b><em>mozilla.org</em></a>
+                    <a class="tile" href="https://developer.mozilla.org/ko/">
+                      <b>MDN Web Docs</b><em>developer.mozilla.org</em></a>
+                    <a class="tile" href="https://openjfx.io/">
+                      <b>OpenJFX</b><em>openjfx.io</em></a>
+                    <a class="tile" href="https://github.com/jongwoo0101">
+                      <b>ForgeFramework</b><em>github.com</em></a>
+                    <a class="tile" href="https://docs.oracle.com/en/java/javase/21/">
+                      <b>Java 21 Docs</b><em>docs.oracle.com</em></a>
+                    <a class="tile" href="https://ko.wikipedia.org/wiki/운영_체제">
+                      <b>운영 체제</b><em>ko.wikipedia.org</em></a>
+                  </div>
+                  <footer>이 페이지는 ForgeOS 안에 들어 있습니다. 네트워크 없이도 열립니다.</footer>
+                </body>
+                </html>
+                """;
+    }
+}
+```
+
+---
+
+# 11. DeadlockResolverApp.java
 
 **Path**
 `src/main/java/forgeos/app/deadlock/DeadlockResolverApp.java`
@@ -429,7 +1145,7 @@ public final class DeadlockResolverApp implements ForgeApp {
 
 ---
 
-# 8. DeadlockResolverView.java
+# 12. DeadlockResolverView.java
 
 **Path**
 `src/main/java/forgeos/app/deadlock/DeadlockResolverView.java`
@@ -773,7 +1489,7 @@ final class DeadlockResolverView extends BorderPane {
 
 ---
 
-# 9. WaitForGraphView.java
+# 13. WaitForGraphView.java
 
 **Path**
 `src/main/java/forgeos/app/deadlock/WaitForGraphView.java`
@@ -1043,7 +1759,7 @@ final class WaitForGraphView extends Pane {
 
 ---
 
-# 10. FinderApp.java
+# 14. FinderApp.java
 
 **Path**
 `src/main/java/forgeos/app/finder/FinderApp.java`
@@ -1101,7 +1817,7 @@ public final class FinderApp implements ForgeApp {
 
 ---
 
-# 11. FinderView.java
+# 15. FinderView.java
 
 **Path**
 `src/main/java/forgeos/app/finder/FinderView.java`
@@ -1112,6 +1828,7 @@ package forgeos.app.finder;
 import forgeframework.filesystem.DirectoryEntryDto;
 import forgeframework.filesystem.FileContentDto;
 import forgeframework.filesystem.FileListDto;
+import forgeframework.filesystem.SyncResultDto;
 import forgeframework.syscall.SystemCallResult;
 import forgeframework.syscall.SystemCallType;
 import forgeos.app.AppContext;
@@ -1199,10 +1916,16 @@ final class FinderView extends BorderPane {
         refresh.getStyleClass().add("toolbar-button");
         refresh.setOnAction(e -> reloadLastColumn());
 
+        // 1.1.0 의 disk.img. 여기까지 눌러야 파일이 재부팅을 견딘다는 사실을
+        // 명령어 없이 알 수 있는 자리다.
+        Button sync = new Button("디스크에 기록", Glyphs.stroked(Glyphs.DISK, 14, "button-glyph"));
+        sync.getStyleClass().add("toolbar-button");
+        sync.setOnAction(e -> syncDisk());
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        HBox bar = new HBox(pathLabel, spacer, newFolder, newFile, refresh);
+        HBox bar = new HBox(pathLabel, spacer, newFolder, newFile, refresh, sync);
         bar.getStyleClass().add("toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
         return bar;
@@ -1326,6 +2049,30 @@ final class FinderView extends BorderPane {
         }
     }
 
+    // ────────────────────────────── 영속화 ──────────────────────────────
+
+    /**
+     * 파일 시스템을 {@code disk.img} 에 내려쓴다.
+     *
+     * <p>커널을 {@code --disk} 없이 띄웠으면 이미지가 없다. 그 경우를 실패로
+     * 보고하지 않는 이유는, 이미지가 없는 것이 오류가 아니라 기본 설정이기
+     * 때문이다({@code diskImagePath} 기본값 null). 대신 무엇을 해야 영속되는지를 말해 준다.</p>
+     */
+    private void syncDisk() {
+        SystemCallResult result = kernelService.call(SystemCallType.SYNC);
+        if (!result.isSuccess()) {
+            pathLabel.setText(result.getMessage());
+            return;
+        }
+        SyncResultDto sync = result.dataAs(SyncResultDto.class);
+        pathLabel.setText(sync.persisted()
+                ? "%s · %d바이트 · 블록 %d/%d · inode %d/%d".formatted(
+                        sync.imagePath(), sync.bytesWritten(),
+                        sync.usedBlocks(), sync.totalBlocks(),
+                        sync.usedInodes(), sync.totalInodes())
+                : "디스크 이미지가 없어 메모리에만 남습니다 (커널을 --disk 로 띄우면 영속됩니다)");
+    }
+
     // ────────────────────────────── 보조 ──────────────────────────────
 
     private FileListDto list(String path) {
@@ -1387,7 +2134,7 @@ final class FinderView extends BorderPane {
 
 ---
 
-# 12. ActivityMonitorApp.java
+# 16. ActivityMonitorApp.java
 
 **Path**
 `src/main/java/forgeos/app/monitor/ActivityMonitorApp.java`
@@ -1402,6 +2149,9 @@ import forgeos.ui.Glyphs;
 
 /**
  * 활성 상태 보기 — 프로세스 표와 메모리 게이지.
+ *
+ * <p>1.1.0 부터 탭이 둘이다 — 프로세스(스케줄러·우선순위·큐 등급)와
+ * 메모리(프레임 테이블·페이지 테이블·스왑). 게이지는 두 탭에 공통이라 사이드바에 있다.</p>
  *
  * <p>커널이 돌려주는 Record DTO({@code ProcessDto}, {@code MemorySnapshot})를
  * 문자열로 만들지 않고 그대로 {@code TableView}와 게이지에 넣는다. CLI가 텍스트로
@@ -1426,12 +2176,12 @@ public final class ActivityMonitorApp implements ForgeApp {
 
     @Override
     public double preferredWidth() {
-        return 920;
+        return 1020;
     }
 
     @Override
     public double preferredHeight() {
-        return 540;
+        return 660;
     }
 
     @Override
@@ -1444,7 +2194,7 @@ public final class ActivityMonitorApp implements ForgeApp {
 
 ---
 
-# 13. ActivityMonitorView.java
+# 17. ActivityMonitorView.java
 
 **Path**
 `src/main/java/forgeos/app/monitor/ActivityMonitorView.java`
@@ -1452,11 +2202,18 @@ public final class ActivityMonitorApp implements ForgeApp {
 ```java
 package forgeos.app.monitor;
 
+import forgeframework.memory.FrameInfo;
 import forgeframework.memory.HeapSnapshot;
 import forgeframework.memory.MemorySnapshot;
+import forgeframework.memory.PageInfo;
+import forgeframework.memory.PageReplacementPolicy;
+import forgeframework.process.ForkResultDto;
+import forgeframework.process.PriorityResultDto;
+import forgeframework.process.ProcessControlBlock;
 import forgeframework.process.ProcessDto;
 import forgeframework.process.ProcessState;
 import forgeframework.process.SchedulerDto;
+import forgeframework.process.SchedulerQueueDto;
 import forgeframework.syscall.SystemCallResult;
 import forgeframework.syscall.SystemCallType;
 import forgeos.app.AppContext;
@@ -1468,12 +2225,20 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -1488,8 +2253,24 @@ import java.util.List;
  * <p>1초마다 표를 통째로 갈아 끼우면 사용자가 고른 행이 매초 풀린다. 프로세스를
  * 고르고 종료 버튼으로 손을 옮기는 사이에 선택이 사라지는 표는 쓸 수가 없다.
  * 그래서 갱신 전에 PID를 기억했다가 갱신 후 같은 PID를 다시 고른다.</p>
+ *
+ * <h2>1.1.0 — 커널이 넓어진 만큼 화면도 넓어졌다</h2>
+ * <p>커널이 스케줄러 6종·스왑·fork(COW)를 갖게 되면서, 이 앱이 답해야 할 질문이
+ * 늘었다. "누가 CPU를 기다리는가"만이 아니라 <b>"왜 저 프로세스가 먼저 뽑혔는가"</b>
+ * (스케줄러·우선순위·큐 등급), <b>"메모리가 어디로 갔는가"</b>(프레임·스왑·COW 공유)
+ * 까지다. 그래서 표는 탭 둘로 나뉜다 — 프로세스 탭이 앞의 질문을, 메모리 탭이
+ * 뒤의 질문을 맡는다. 게이지는 두 탭에 공통이라 사이드바에 남는다.</p>
+ *
+ * <h2>주기 갱신과 사용자 조작이 부딪히지 않게</h2>
+ * <p>스케줄러·교체 정책 콤보 상자는 커널 값을 되비추면서 동시에 사용자 입력을
+ * 받는다. 되비추는 순간에도 {@code setValue}는 변경 이벤트를 쏘므로, 그대로 두면
+ * 1초마다 커널에 "스케줄러를 지금 값으로 바꿔라"는 시스템 콜이 날아간다.
+ * {@link #syncing} 이 그 순환을 끊는다.</p>
  */
 final class ActivityMonitorView extends BorderPane {
+
+    /** 게이지 지름. 사이드바에 넷이 세로로 들어가야 해서 기본값보다 작다. */
+    private static final double GAUGE_SIZE = 96;
 
     private final KernelService kernelService;
     private final KernelService.Subscription subscription;
@@ -1497,25 +2278,46 @@ final class ActivityMonitorView extends BorderPane {
     private final ObservableList<ProcessDto> processes = FXCollections.observableArrayList();
     private final TableView<ProcessDto> table = new TableView<>(processes);
 
-    private final DonutChart frameChart = new DonutChart("물리 프레임", "accent-ember");
-    private final DonutChart heapChart = new DonutChart("힙 사용량", "accent-gold");
-    private final DonutChart tlbChart = new DonutChart("TLB 적중률", "accent-cyan");
+    private final ObservableList<FrameInfo> frames = FXCollections.observableArrayList();
+    private final TableView<FrameInfo> frameTable = new TableView<>(frames);
 
-    private final Label schedulerLabel = new Label("스케줄러 —");
-    private final Label tlbDetailLabel = new Label();
+    private final ObservableList<PageInfo> pages = FXCollections.observableArrayList();
+    private final TableView<PageInfo> pageTable = new TableView<>(pages);
+
+    private final DonutChart frameChart = new DonutChart("물리 프레임", "accent-ember", GAUGE_SIZE);
+    private final DonutChart heapChart = new DonutChart("힙 사용량", "accent-gold", GAUGE_SIZE);
+    private final DonutChart tlbChart = new DonutChart("TLB 적중률", "accent-cyan", GAUGE_SIZE);
+    private final DonutChart swapChart = new DonutChart("스왑 슬롯", "accent-violet", GAUGE_SIZE);
+
+    private final ComboBox<Algorithm> schedulerBox = new ComboBox<>();
+    private final ComboBox<PageReplacementPolicy> policyBox = new ComboBox<>();
+
+    private final TabPane tabs = new TabPane();
+    private final FlowPane queueStrip = new FlowPane();
+    private final Label pageTableTitle = new Label("페이지 테이블");
+    private final Label faultLabel = new Label();
+    private final Label statusLabel = new Label();
+
     private final TextField processNameField = new TextField();
     private final TextField burstTimeField = new TextField();
+    private final TextField priorityField = new TextField();
+
+    /** 커널 값을 콤보에 되비추는 중. 그동안 변경 이벤트는 무시한다. */
+    private boolean syncing;
 
     ActivityMonitorView(AppContext context) {
         this.kernelService = context.kernel();
         getStyleClass().add("activity-monitor");
 
-        buildTable();
+        buildProcessTable();
+        buildFrameTable();
+        buildPageTable();
 
         BorderPane left = new BorderPane();
         left.getStyleClass().add("monitor-left");
         left.setTop(buildToolbar());
-        left.setCenter(table);
+        left.setCenter(buildTabs());
+        left.setBottom(buildStatusBar());
 
         setCenter(left);
         setRight(buildSidebar());
@@ -1526,42 +2328,98 @@ final class ActivityMonitorView extends BorderPane {
 
     // ────────────────────────────── 구성 ──────────────────────────────
 
-    private void buildTable() {
-        TableColumn<ProcessDto, Integer> pid = new TableColumn<>("PID");
-        pid.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(cell.getValue().pid()));
-        pid.getStyleClass().add("column-numeric");
-        pid.setPrefWidth(64);
-
-        TableColumn<ProcessDto, String> name = new TableColumn<>("이름");
-        name.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(cell.getValue().name()));
-        name.setPrefWidth(160);
+    private void buildProcessTable() {
+        table.getColumns().add(column("PID", 56, true, p -> String.valueOf(p.pid())));
+        table.getColumns().add(column("이름", 128, false, ProcessDto::name));
+        // 부모 PID 는 fork 가 생기면서 의미를 얻은 열이다. 부모가 없으면 -1 이 온다.
+        table.getColumns().add(column("PPID", 58, true,
+                p -> p.parentPid() < 0 ? "—" : String.valueOf(p.parentPid())));
+        table.getColumns().add(column("우선", 54, true, p -> String.valueOf(p.priority())));
+        // 큐 등급은 MLFQ 에서만 뜻이 있다. 다른 스케줄러에서는 전부 같은 값이라 가로줄만 보여 준다.
+        table.getColumns().add(column("큐", 48, true,
+                p -> p.queueLevel() < 0 ? "—" : "Q" + p.queueLevel()));
 
         TableColumn<ProcessDto, ProcessState> state = new TableColumn<>("상태");
         state.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(cell.getValue().state()));
-        state.setCellFactory(column -> new StateCell());
-        state.setPrefWidth(110);
-
-        TableColumn<ProcessDto, String> cpu = new TableColumn<>("CPU 사용");
-        cpu.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(
-                cell.getValue().cpuTimeUsed() + " / " + cell.getValue().burstTime()));
-        cpu.getStyleClass().add("column-numeric");
-        cpu.setPrefWidth(110);
-
-        TableColumn<ProcessDto, String> progress = new TableColumn<>("진행");
-        progress.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(formatProgress(cell.getValue())));
-        progress.setPrefWidth(130);
-
-        table.getColumns().add(pid);
-        table.getColumns().add(name);
+        state.setCellFactory(col -> new StateCell());
+        state.setPrefWidth(104);
         table.getColumns().add(state);
-        table.getColumns().add(cpu);
-        table.getColumns().add(progress);
+
+        table.getColumns().add(column("CPU 사용", 96, true,
+                p -> p.cpuTimeUsed() + " / " + p.burstTime()));
+        table.getColumns().add(column("진행", 124, false, ActivityMonitorView::formatProgress));
 
         table.getStyleClass().add("process-table");
         table.setPlaceholder(new Label("실행 중인 프로세스가 없습니다.\n위에서 새 프로세스를 만들어 보세요."));
+        table.setContextMenu(buildRowMenu());
+        table.getSelectionModel().selectedItemProperty().addListener(
+                (obs, old, now) -> refreshPageTable());
         // 리사이즈 정책은 기본값(UNCONSTRAINED)을 그대로 둔다. CONSTRAINED_RESIZE_POLICY 는
         // JavaFX 20에서 deprecated 되었고, 이 프로젝트는 -Werror 기준선을 지킨다.
-        // 대신 마지막 컬럼이 남는 폭을 먹도록 넉넉한 pref 를 준다.
+    }
+
+    private void buildFrameTable() {
+        frameTable.getColumns().add(column("프레임", 66, true, f -> "#" + f.frameNumber()));
+        frameTable.getColumns().add(column("상태", 68, false, f -> f.allocated() ? "USED" : "FREE"));
+        frameTable.getColumns().add(column("PID", 56, true,
+                f -> f.allocated() ? String.valueOf(f.ownerPid()) : "—"));
+        frameTable.getColumns().add(column("페이지", 62, true,
+                f -> f.allocated() ? "#" + f.pageNumber() : "—"));
+        // 참조 수가 2 이상이면 fork 로 공유 중인 프레임이다. 그 프레임은 스왑 대상에서도 빠진다.
+        frameTable.getColumns().add(column("REF", 52, true,
+                f -> f.allocated() ? String.valueOf(f.refCount()) : "—"));
+        frameTable.getColumns().add(column("플래그", 120, false, ActivityMonitorView::frameFlags));
+
+        frameTable.getStyleClass().add("process-table");
+        frameTable.setPlaceholder(new Label("프레임 정보가 없습니다."));
+    }
+
+    private void buildPageTable() {
+        pageTable.getColumns().add(column("페이지", 66, true, p -> "#" + p.pageNumber()));
+        pageTable.getColumns().add(column("상태", 74, false, ActivityMonitorView::pageState));
+        pageTable.getColumns().add(column("프레임", 66, true,
+                p -> p.present() ? "#" + p.frameNumber() : "—"));
+        pageTable.getColumns().add(column("스왑", 62, true,
+                p -> p.swapSlot() < 0 ? "—" : "#" + p.swapSlot()));
+        pageTable.getColumns().add(column("권한", 58, false, p -> p.writable() ? "rw" : "r-"));
+        pageTable.getColumns().add(column("COW", 58, false, p -> p.copyOnWrite() ? "공유" : "—"));
+        pageTable.getColumns().add(column("REF", 52, true, p -> String.valueOf(p.refCount())));
+
+        pageTable.getStyleClass().add("process-table");
+        pageTable.setPlaceholder(new Label("프로세스를 고르면 그 주소 공간이 보입니다."));
+    }
+
+    private TabPane buildTabs() {
+        tabs.getStyleClass().add("monitor-tabs");
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        queueStrip.getStyleClass().add("queue-strip");
+
+        BorderPane processPane = new BorderPane();
+        processPane.getStyleClass().add("monitor-pane");
+        processPane.setCenter(table);
+        processPane.setBottom(queueStrip);
+
+        Tab processTab = new Tab("프로세스", processPane);
+        Tab memoryTab = new Tab("메모리", buildMemoryPane());
+
+        tabs.getTabs().addAll(processTab, memoryTab);
+        // 메모리 탭으로 옮기는 순간 바로 채워져야 한다. 다음 펄스(최대 1초)를 기다리게 하지 않는다.
+        tabs.getSelectionModel().selectedItemProperty().addListener((obs, old, now) -> refresh());
+        return tabs;
+    }
+
+    private VBox buildMemoryPane() {
+        Label frameTitle = new Label("프레임 테이블 — 물리 메모리 한 장 한 장");
+        frameTitle.getStyleClass().add("monitor-section");
+        pageTableTitle.getStyleClass().add("monitor-section");
+
+        VBox.setVgrow(frameTable, Priority.ALWAYS);
+        VBox.setVgrow(pageTable, Priority.ALWAYS);
+
+        VBox pane = new VBox(frameTitle, frameTable, pageTableTitle, pageTable);
+        pane.getStyleClass().addAll("monitor-pane", "monitor-memory");
+        return pane;
     }
 
     private HBox buildToolbar() {
@@ -1569,10 +2427,17 @@ final class ActivityMonitorView extends BorderPane {
         processNameField.getStyleClass().add("field");
         burstTimeField.setPromptText("버스트");
         burstTimeField.getStyleClass().addAll("field", "field-narrow");
+        priorityField.setPromptText("우선");
+        priorityField.getStyleClass().addAll("field", "field-narrow");
 
         Button exec = new Button("실행", Glyphs.stroked(Glyphs.PLUS, 14, "button-glyph"));
         exec.getStyleClass().add("toolbar-button");
         exec.setOnAction(e -> execProcess());
+
+        Button fork = new Button("복제", Glyphs.stroked(Glyphs.FORK, 14, "button-glyph"));
+        fork.getStyleClass().add("toolbar-button");
+        fork.setOnAction(e -> forkSelected());
+        fork.disableProperty().bind(table.getSelectionModel().selectedItemProperty().isNull());
 
         Button kill = new Button("강제 종료", Glyphs.stroked(Glyphs.STOP, 14, "button-glyph"));
         kill.getStyleClass().add("toolbar-button");
@@ -1583,21 +2448,74 @@ final class ActivityMonitorView extends BorderPane {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        schedulerLabel.getStyleClass().add("toolbar-status");
+        schedulerBox.getItems().setAll(
+                new Algorithm("fcfs", "FCFS", "FCFS · 도착 순서"),
+                new Algorithm("rr", "Round Robin", "Round Robin · 퀀텀"),
+                new Algorithm("sjf", "SJF", "SJF · 총 실행 시간"),
+                new Algorithm("srtf", "SRTF", "SRTF · 남은 시간"),
+                new Algorithm("priority", "Priority", "Priority · 우선순위"),
+                new Algorithm("mlfq", "MLFQ", "MLFQ · 다단계 피드백"));
+        schedulerBox.setOnAction(e -> onSchedulerPicked());
 
-        HBox bar = new HBox(processNameField, burstTimeField, exec, kill, spacer, schedulerLabel);
+        Label caption = new Label("스케줄러");
+        caption.getStyleClass().add("toolbar-caption");
+
+        HBox bar = new HBox(processNameField, burstTimeField, priorityField,
+                exec, fork, kill, spacer, caption, schedulerBox);
         bar.getStyleClass().add("toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
         return bar;
     }
 
-    private VBox buildSidebar() {
-        tlbDetailLabel.getStyleClass().add("sidebar-note");
+    private ContextMenu buildRowMenu() {
+        MenuItem forkItem = new MenuItem("복제 (fork)");
+        forkItem.setOnAction(e -> forkSelected());
 
-        VBox sidebar = new VBox(frameChart, heapChart, tlbChart, tlbDetailLabel);
+        MenuItem raise = new MenuItem("우선순위 올리기 (값 −1)");
+        raise.setOnAction(e -> nudgePriority(-1));
+
+        MenuItem lower = new MenuItem("우선순위 내리기 (값 +1)");
+        lower.setOnAction(e -> nudgePriority(1));
+
+        MenuItem kill = new MenuItem("강제 종료");
+        kill.setOnAction(e -> killSelected());
+
+        return new ContextMenu(forkItem, new SeparatorMenuItem(), raise, lower,
+                new SeparatorMenuItem(), kill);
+    }
+
+    private ScrollPane buildSidebar() {
+        policyBox.getItems().setAll(PageReplacementPolicy.values());
+        policyBox.setOnAction(e -> onPolicyPicked());
+
+        Label policyCaption = new Label("페이지 교체 정책");
+        policyCaption.getStyleClass().add("toolbar-caption");
+
+        VBox policyBoxRow = new VBox(policyCaption, policyBox);
+        policyBoxRow.getStyleClass().add("policy-box");
+
+        faultLabel.getStyleClass().add("sidebar-note");
+
+        VBox sidebar = new VBox(frameChart, heapChart, tlbChart, swapChart,
+                policyBoxRow, faultLabel);
         sidebar.getStyleClass().add("monitor-sidebar");
         sidebar.setAlignment(Pos.TOP_CENTER);
-        return sidebar;
+
+        // 게이지 넷과 정책 상자를 합치면 작은 창에서는 세로가 모자란다. 잘리는 대신 스크롤한다.
+        ScrollPane scroller = new ScrollPane(sidebar);
+        scroller.getStyleClass().add("monitor-sidebar-scroll");
+        scroller.setFitToWidth(true);
+        scroller.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroller.setMinWidth(Region.USE_PREF_SIZE);
+        return scroller;
+    }
+
+    private HBox buildStatusBar() {
+        statusLabel.getStyleClass().add("toolbar-status");
+        HBox bar = new HBox(statusLabel);
+        bar.getStyleClass().add("monitor-status-bar");
+        bar.setAlignment(Pos.CENTER_LEFT);
+        return bar;
     }
 
     // ────────────────────────────── 동작 ──────────────────────────────
@@ -1607,13 +2525,68 @@ final class ActivityMonitorView extends BorderPane {
                 ? "proc" + (processes.size() + 1)
                 : processNameField.getText().trim();
 
-        SystemCallResult result = burstTimeField.getText().isBlank()
-                ? kernelService.call(SystemCallType.EXEC, name)
-                : kernelService.call(SystemCallType.EXEC, name, burstTimeField.getText().trim());
+        List<String> args = new java.util.ArrayList<>();
+        args.add(name);
+        if (!burstTimeField.getText().isBlank()) {
+            args.add(burstTimeField.getText().trim());
+        }
+        if (!priorityField.getText().isBlank()) {
+            // 우선순위는 세 번째 인자다. 버스트를 비워 두고 우선순위만 줄 수는 없으므로 기본값을 채운다.
+            if (args.size() == 1) {
+                args.add(String.valueOf(defaultBurst()));
+            }
+            args.add(priorityField.getText().trim());
+        }
 
+        SystemCallResult result = kernelService.call(
+                SystemCallType.EXEC, args.toArray(new String[0]));
         if (result.isSuccess()) {
             processNameField.clear();
             burstTimeField.clear();
+            priorityField.clear();
+        }
+        status(result.getMessage());
+        refresh();
+    }
+
+    private void forkSelected() {
+        ProcessDto selected = table.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            return;
+        }
+        SystemCallResult result = kernelService.call(
+                SystemCallType.FORK, String.valueOf(selected.pid()));
+        if (result.isSuccess()) {
+            ForkResultDto fork = result.dataAs(ForkResultDto.class);
+            status("PID %d → PID %d 복제 완료. 페이지 %d장을 COW 로 공유합니다 — 프레임은 늘지 않았습니다."
+                    .formatted(fork.parentPid(), fork.childPid(), fork.sharedPages()));
+        } else {
+            status(result.getMessage());
+        }
+        refresh();
+    }
+
+    private void nudgePriority(int delta) {
+        ProcessDto selected = table.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            return;
+        }
+        int next = Math.max(ProcessControlBlock.MIN_PRIORITY_VALUE,
+                Math.min(ProcessControlBlock.MAX_PRIORITY_VALUE, selected.priority() + delta));
+        if (next == selected.priority()) {
+            status("우선순위는 %d ~ %d 범위입니다.".formatted(
+                    ProcessControlBlock.MIN_PRIORITY_VALUE, ProcessControlBlock.MAX_PRIORITY_VALUE));
+            return;
+        }
+        SystemCallResult result = kernelService.call(SystemCallType.PRIORITY,
+                String.valueOf(selected.pid()), String.valueOf(next));
+        if (result.isSuccess()) {
+            PriorityResultDto changed = result.dataAs(PriorityResultDto.class);
+            status("PID %d 우선순위 %d → %d%s".formatted(
+                    changed.pid(), changed.oldPriority(), changed.newPriority(),
+                    changed.requeued() ? " (준비 큐에 다시 넣어 정렬을 유지했습니다)" : ""));
+        } else {
+            status(result.getMessage());
         }
         refresh();
     }
@@ -1623,14 +2596,43 @@ final class ActivityMonitorView extends BorderPane {
         if (selected == null) {
             return;
         }
-        kernelService.call(SystemCallType.KILL, String.valueOf(selected.pid()));
+        SystemCallResult result = kernelService.call(
+                SystemCallType.KILL, String.valueOf(selected.pid()));
+        status(result.getMessage());
         refresh();
     }
+
+    private void onSchedulerPicked() {
+        Algorithm picked = schedulerBox.getValue();
+        if (syncing || picked == null) {
+            return;
+        }
+        SystemCallResult result = kernelService.call(SystemCallType.SCHEDULER, picked.token());
+        status(result.getMessage());
+        refresh();
+    }
+
+    private void onPolicyPicked() {
+        PageReplacementPolicy picked = policyBox.getValue();
+        if (syncing || picked == null) {
+            return;
+        }
+        SystemCallResult result = kernelService.call(
+                SystemCallType.SWAPINFO, "policy", picked.name().toLowerCase(java.util.Locale.ROOT));
+        status(result.getMessage());
+        refresh();
+    }
+
+    // ────────────────────────────── 갱신 ──────────────────────────────
 
     private void refresh() {
         refreshProcesses();
         refreshMemory();
         refreshScheduler();
+        if (tabs.getSelectionModel().getSelectedIndex() == 1) {
+            refreshFrameTable();
+            refreshPageTable();
+        }
     }
 
     private void refreshProcesses() {
@@ -1684,8 +2686,25 @@ final class ActivityMonitorView extends BorderPane {
         tlbChart.setValue(snapshot.tlbHitRatio(),
                 "적중 %d · 실패 %d".formatted(snapshot.tlbHits(), snapshot.tlbMisses()));
 
-        tlbDetailLabel.setText("TLB는 주소 변환 캐시입니다. 같은 페이지를 반복 접근할수록\n"
-                + "적중률이 오릅니다 — 터미널에서 translate 를 여러 번 실행해 보세요.");
+        int swapTotal = snapshot.swapTotalSlots();
+        double swapRatio = swapTotal == 0 ? 0 : (double) snapshot.swapUsedSlots() / swapTotal;
+        swapChart.setValue(swapRatio, swapTotal == 0
+                ? "스왑이 꺼져 있음"
+                : "%d / %d 슬롯".formatted(snapshot.swapUsedSlots(), swapTotal));
+
+        syncing = true;
+        policyBox.setValue(snapshot.replacementPolicy());
+        syncing = false;
+
+        faultLabel.setText("""
+                페이지 폴트 %d · 스왑 인 %d · 스왑 아웃 %d
+                COW 폴트 %d
+
+                폴트는 고장이 아니라 정상 동작입니다. 프레임이 모자라면 커널이
+                가장 쓸모없어 보이는 페이지를 밀어내고, 그 페이지에 다시 손이
+                닿는 순간 폴트로 되찾아 옵니다."""
+                .formatted(snapshot.pageFaults(), snapshot.swapIns(),
+                        snapshot.swapOuts(), snapshot.cowFaults()));
     }
 
     private void refreshScheduler() {
@@ -1694,9 +2713,99 @@ final class ActivityMonitorView extends BorderPane {
             return;
         }
         SchedulerDto dto = result.dataAs(SchedulerDto.class);
-        schedulerLabel.setText(dto.preemptive()
-                ? "스케줄러 %s · 퀀텀 %d".formatted(dto.name(), dto.timeQuantum())
-                : "스케줄러 %s · 비선점".formatted(dto.name()));
+
+        syncing = true;
+        for (Algorithm option : schedulerBox.getItems()) {
+            if (dto.name().startsWith(option.kernelPrefix())) {
+                schedulerBox.setValue(option);
+                break;
+            }
+        }
+        syncing = false;
+
+        queueStrip.getChildren().clear();
+        for (SchedulerQueueDto queue : dto.queues()) {
+            queueStrip.getChildren().add(queueChip(dto, queue));
+        }
+    }
+
+    private void refreshFrameTable() {
+        SystemCallResult result = kernelService.call(SystemCallType.FRAMETABLE);
+        if (result.isSuccess()) {
+            frames.setAll(result.dataAsList(FrameInfo.class));
+        }
+    }
+
+    private void refreshPageTable() {
+        ProcessDto selected = table.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            pages.clear();
+            pageTableTitle.setText("페이지 테이블 — 프로세스를 고르세요");
+            return;
+        }
+        pageTableTitle.setText("페이지 테이블 — PID %d (%s)".formatted(selected.pid(), selected.name()));
+
+        SystemCallResult result = kernelService.call(
+                SystemCallType.PAGETABLE, String.valueOf(selected.pid()));
+        if (result.isSuccess()) {
+            pages.setAll(result.dataAsList(PageInfo.class));
+        } else {
+            pages.clear();
+        }
+    }
+
+    // ────────────────────────────── 보조 ──────────────────────────────
+
+    private Label queueChip(SchedulerDto scheduler, SchedulerQueueDto queue) {
+        String title = scheduler.queues().size() > 1
+                ? "Q%d (q=%d)".formatted(queue.level(), queue.timeQuantum())
+                : "준비 큐 (q=%d)".formatted(queue.timeQuantum());
+        String body = queue.pids().isEmpty()
+                ? "비어 있음"
+                : queue.pids().stream().map(String::valueOf)
+                        .reduce((a, b) -> a + " → " + b).orElse("");
+
+        Label chip = new Label(title + "  " + body);
+        chip.getStyleClass().add("queue-chip");
+        chip.pseudoClassStateChanged(Styles.ON, !queue.pids().isEmpty());
+        return chip;
+    }
+
+    private long defaultBurst() {
+        var kernel = kernelService.kernel();
+        return kernel == null ? 10 : kernel.getConfig().defaultBurstTime();
+    }
+
+    private void status(String message) {
+        if (message != null && !message.isBlank()) {
+            statusLabel.setText(message.lines().findFirst().orElse(message));
+        }
+    }
+
+    private static <T> TableColumn<T, String> column(String title, double width, boolean numeric,
+                                                     java.util.function.Function<T, String> text) {
+        TableColumn<T, String> column = new TableColumn<>(title);
+        column.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(text.apply(cell.getValue())));
+        column.setPrefWidth(width);
+        if (numeric) {
+            column.getStyleClass().add("column-numeric");
+        }
+        return column;
+    }
+
+    private static String frameFlags(FrameInfo frame) {
+        if (!frame.allocated()) {
+            return "—";
+        }
+        String bits = (frame.dirty() ? "D" : "-") + (frame.referenced() ? "R" : "-");
+        return frame.refCount() >= 2 ? bits + "  COW" : bits;
+    }
+
+    private static String pageState(PageInfo page) {
+        if (!page.valid()) {
+            return "—";
+        }
+        return page.present() ? "MEM" : "SWAP";
     }
 
     private static String formatProgress(ProcessDto process) {
@@ -1712,8 +2821,30 @@ final class ActivityMonitorView extends BorderPane {
         subscription.cancel();
     }
 
+    /**
+     * 스케줄러 선택지 하나.
+     *
+     * <p>{@code kernelPrefix}가 따로 있는 이유는, 커널이 돌려주는 이름
+     * ({@code "Round Robin (RR)"})이 인자({@code "rr"})로 시작하지 않는 경우가
+     * 있기 때문이다. 인자를 접두사로 삼아 맞춰 보는 방식은 그 하나에서 조용히 깨진다.</p>
+     *
+     * @param token        커널이 알아듣는 인자 (예: {@code mlfq})
+     * @param kernelPrefix 커널이 돌려주는 이름의 앞부분 (예: {@code Round Robin})
+     * @param label        사람이 읽는 이름
+     */
+    private record Algorithm(String token, String kernelPrefix, String label) {
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
     /** 상태를 색 배지로 보여 주는 셀. 색은 CSS의 {@code .state-*} 클래스가 정한다. */
     private static final class StateCell extends TableCell<ProcessDto, ProcessState> {
+
+        StateCell() {
+        }
+
         @Override
         protected void updateItem(ProcessState state, boolean empty) {
             super.updateItem(state, empty);
@@ -1723,7 +2854,8 @@ final class ActivityMonitorView extends BorderPane {
                 return;
             }
             Label badge = new Label(state.name());
-            badge.getStyleClass().addAll("state-badge", "state-" + state.name().toLowerCase());
+            badge.getStyleClass().addAll("state-badge", "state-" + state.name().toLowerCase(
+                    java.util.Locale.ROOT));
             setGraphic(badge);
             setText(null);
         }
@@ -1733,7 +2865,7 @@ final class ActivityMonitorView extends BorderPane {
 
 ---
 
-# 14. DonutChart.java
+# 18. DonutChart.java
 
 **Path**
 `src/main/java/forgeos/app/monitor/DonutChart.java`
@@ -1767,10 +2899,7 @@ import javafx.scene.shape.StrokeLineCap;
  */
 final class DonutChart extends VBox {
 
-    /** 고리의 바깥 지름(px). */
-    private static final double SIZE = 112;
-
-    /** 고리 두께(px). */
+    /** 고리 두께(px). 지름이 달라져도 두께는 유지한다 — 얇아지면 색이 안 읽힌다. */
     private static final double THICKNESS = 11;
 
     private final Arc progress = new Arc();
@@ -1781,20 +2910,28 @@ final class DonutChart extends VBox {
     private final SpringValue sweep = new SpringValue(value -> progress.setLength(value))
             .tune(Motion.RESPONSE_STANDARD, Motion.DAMPING_STANDARD);
 
-    DonutChart(String caption, String accentStyleClass) {
+    /**
+     * 게이지 하나를 만든다.
+     *
+     * @param caption          고리 아래 제목
+     * @param accentStyleClass 고리 색을 정하는 CSS 클래스
+     * @param size             고리의 바깥 지름(px). 사이드바에 몇 개가 들어가는지에 따라 다르다
+     */
+    DonutChart(String caption, String accentStyleClass, double size) {
         getStyleClass().add("donut");
         setAlignment(Pos.CENTER);
 
-        double radius = (SIZE - THICKNESS) / 2;
+        final double diameter = size;
+        double radius = (diameter - THICKNESS) / 2;
 
-        Arc track = new Arc(SIZE / 2, SIZE / 2, radius, radius, 0, 360);
+        Arc track = new Arc(diameter / 2, diameter / 2, radius, radius, 0, 360);
         track.setType(ArcType.OPEN);
         track.setFill(null);
         track.setStrokeWidth(THICKNESS);
         track.getStyleClass().add("donut-track");
 
-        progress.setCenterX(SIZE / 2);
-        progress.setCenterY(SIZE / 2);
+        progress.setCenterX(diameter / 2);
+        progress.setCenterY(diameter / 2);
         progress.setRadiusX(radius);
         progress.setRadiusY(radius);
         // 12시 방향에서 시작해 시계 방향으로 찬다. 시계와 같은 방향이라 설명이 필요 없다.
@@ -1807,9 +2944,9 @@ final class DonutChart extends VBox {
         progress.getStyleClass().addAll("donut-progress", accentStyleClass);
 
         Pane ring = new Pane(track, progress);
-        ring.setPrefSize(SIZE, SIZE);
-        ring.setMinSize(SIZE, SIZE);
-        ring.setMaxSize(SIZE, SIZE);
+        ring.setPrefSize(diameter, diameter);
+        ring.setMinSize(diameter, diameter);
+        ring.setMaxSize(diameter, diameter);
 
         valueLabel.getStyleClass().add("donut-value");
         StackPane center = new StackPane(ring, valueLabel);
@@ -1840,7 +2977,506 @@ final class DonutChart extends VBox {
 
 ---
 
-# 15. TerminalApp.java
+# 19. NotepadApp.java
+
+**Path**
+`src/main/java/forgeos/app/notepad/NotepadApp.java`
+
+```java
+package forgeos.app.notepad;
+
+import forgeos.app.AppContext;
+import forgeos.app.AppInstance;
+import forgeos.app.ForgeApp;
+import forgeos.ui.Glyphs;
+
+/**
+ * 메모장 — 커널 파일 시스템 위에서 도는 텍스트 편집기.
+ *
+ * <h2>왜 호스트 디스크가 아니라 커널 디스크인가</h2>
+ * <p>맥의 실제 폴더에 {@code .txt}를 떨구는 편이 구현은 훨씬 쉽다. 그렇게 하지
+ * 않은 이유는 이 앱이 하는 일이 "글을 적는 것"이 아니라 <b>커널의 파일 시스템을
+ * 손으로 만져 보는 것</b>이기 때문이다. 메모장에서 저장한 파일은 Finder 의 컬럼에
+ * 곧바로 나타나고, 터미널의 {@code cat} 으로 읽히며, {@code sync} 를 누르면
+ * {@code disk.img} 에 내려앉아 재부팅을 견딘다. 1.1.0 이 들여온 영속화를
+ * 명령어 없이 눈으로 확인할 수 있는 자리가 바로 여기다.</p>
+ */
+public final class NotepadApp implements ForgeApp {
+
+    @Override
+    public String id() {
+        return "notepad";
+    }
+
+    @Override
+    public String title() {
+        return "메모장";
+    }
+
+    @Override
+    public String iconPath() {
+        return Glyphs.NOTEPAD;
+    }
+
+    @Override
+    public double preferredWidth() {
+        return 880;
+    }
+
+    @Override
+    public double preferredHeight() {
+        return 560;
+    }
+
+    @Override
+    public AppInstance launch(AppContext context) {
+        NotepadView view = new NotepadView(context);
+        return new AppInstance(view, view::dispose);
+    }
+}
+```
+
+---
+
+# 20. NotepadView.java
+
+**Path**
+`src/main/java/forgeos/app/notepad/NotepadView.java`
+
+```java
+package forgeos.app.notepad;
+
+import forgeframework.filesystem.DirectoryEntryDto;
+import forgeframework.filesystem.FileContentDto;
+import forgeframework.filesystem.FileListDto;
+import forgeframework.filesystem.SyncResultDto;
+import forgeframework.filesystem.WriteResultDto;
+import forgeframework.syscall.SystemCallResult;
+import forgeframework.syscall.SystemCallType;
+import forgeos.app.AppContext;
+import forgeos.core.KernelService;
+import forgeos.ui.Glyphs;
+import forgeos.ui.Styles;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
+
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 메모장 화면.
+ *
+ * <h2>대화상자를 하나도 쓰지 않는다</h2>
+ * <p>"이름을 입력하세요", "저장하지 않고 닫을까요?" 같은 질문을 {@code Dialog}로
+ * 띄우면 그때마다 진짜 네이티브 창이 하나 열린다. ForgeOS 는 "데스크탑 안의
+ * 모든 것은 노드"라는 원칙 위에 서 있고, 실제로 네이티브 창 해제는 종료 시
+ * 크래시의 원인으로 지목된 자리이기도 하다. 그래서 새 파일 이름은 툴바의
+ * 입력칸으로 받고, 저장하지 않은 변경은 질문 대신 <b>초안(draft)</b>으로 들고 있는다.</p>
+ *
+ * <h2>초안은 잃어버리지 않는다</h2>
+ * <p>{@link #drafts}가 경로별 편집 중인 내용을, {@link #saved}가 마지막으로
+ * 디스크에서 읽거나 디스크로 쓴 내용을 들고 있다. 둘이 다르면 저장되지 않은
+ * 변경이 있는 것이고, 목록에 점(•)이 붙는다. 파일을 옮겨 다녀도 초안은 그대로
+ * 남으므로 "저장할까요?"를 물을 이유 자체가 없어진다.</p>
+ */
+final class NotepadView extends BorderPane {
+
+    /** 루트 경로. */
+    private static final String ROOT = "/";
+
+    private final KernelService kernelService;
+
+    private final ListView<DirectoryEntryDto> fileList = new ListView<>();
+    private final TextArea editor = new TextArea();
+    private final TextField newNameField = new TextField();
+
+    private final Label directoryLabel = new Label(ROOT);
+    private final Label openFileLabel = new Label("열린 파일 없음");
+    private final Label countLabel = new Label();
+    private final Label statusLabel = new Label();
+
+    private final Button saveButton = new Button("저장", Glyphs.stroked(Glyphs.SAVE, 14, "button-glyph"));
+    private final Button revertButton =
+            new Button("되돌리기", Glyphs.stroked(Glyphs.REFRESH, 14, "button-glyph"));
+
+    /** 편집 중인 내용. 키는 절대경로. 창을 닫기 전까지 살아 있다. */
+    private final Map<String, String> drafts = new HashMap<>();
+
+    /** 마지막으로 디스크와 일치했던 내용. {@link #drafts}와 다르면 저장되지 않은 변경이다. */
+    private final Map<String, String> saved = new HashMap<>();
+
+    private String directory = ROOT;
+    private String openFile;
+
+    /** 편집기에 프로그램이 값을 넣는 중인지. 리스너가 그것을 사용자 입력으로 오해하지 않도록. */
+    private boolean loading;
+
+    NotepadView(AppContext context) {
+        this.kernelService = context.kernel();
+        getStyleClass().add("notepad");
+
+        setLeft(buildSidebar());
+        setCenter(buildEditorPane());
+
+        editor.textProperty().addListener((obs, old, text) -> onEdited(text));
+        addEventFilter(KeyEvent.KEY_PRESSED, this::onKeyPressed);
+
+        reloadDirectory();
+        updateEditorState();
+        status("커널 파일 시스템의 " + ROOT + " 를 열었습니다. 저장한 파일은 Finder 와 터미널에서도 보입니다.");
+    }
+
+    // ────────────────────────────── 구성 ──────────────────────────────
+
+    private VBox buildSidebar() {
+        directoryLabel.getStyleClass().add("notepad-path");
+
+        Button up = new Button("상위 폴더", Glyphs.stroked(Glyphs.ARROW_LEFT, 13, "button-glyph"));
+        up.getStyleClass().add("toolbar-button");
+        up.setOnAction(e -> goUp());
+
+        Button refresh = new Button(null, Glyphs.stroked(Glyphs.REFRESH, 13, "button-glyph"));
+        refresh.getStyleClass().add("toolbar-button");
+        refresh.setOnAction(e -> reloadDirectory());
+
+        HBox header = new HBox(up, refresh);
+        header.getStyleClass().add("notepad-sidebar-header");
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        fileList.getStyleClass().add("notepad-file-list");
+        fileList.setCellFactory(view -> new EntryCell());
+        fileList.setPlaceholder(new Label("비어 있음"));
+        VBox.setVgrow(fileList, Priority.ALWAYS);
+        fileList.getSelectionModel().selectedItemProperty().addListener(
+                (obs, old, entry) -> {
+                    if (entry != null) {
+                        onEntrySelected(entry);
+                    }
+                });
+
+        VBox sidebar = new VBox(directoryLabel, header, fileList);
+        sidebar.getStyleClass().add("notepad-sidebar");
+        return sidebar;
+    }
+
+    private BorderPane buildEditorPane() {
+        editor.getStyleClass().add("notepad-editor");
+        editor.setWrapText(true);
+        editor.setPromptText("왼쪽에서 파일을 고르거나, 위에서 새 파일을 만드세요.");
+
+        BorderPane pane = new BorderPane();
+        pane.getStyleClass().add("notepad-main");
+        pane.setTop(buildToolbar());
+        pane.setCenter(editor);
+        pane.setBottom(buildStatusBar());
+        return pane;
+    }
+
+    private HBox buildToolbar() {
+        newNameField.setPromptText("새 파일 이름");
+        newNameField.getStyleClass().add("field");
+        newNameField.setOnAction(e -> createFile());
+
+        Button create = new Button("만들기", Glyphs.stroked(Glyphs.PLUS, 14, "button-glyph"));
+        create.getStyleClass().add("toolbar-button");
+        create.setOnAction(e -> createFile());
+
+        saveButton.getStyleClass().add("toolbar-button");
+        saveButton.setOnAction(e -> save());
+
+        revertButton.getStyleClass().add("toolbar-button");
+        revertButton.setOnAction(e -> revert());
+
+        Button sync = new Button("디스크에 기록", Glyphs.stroked(Glyphs.DISK, 14, "button-glyph"));
+        sync.getStyleClass().add("toolbar-button");
+        sync.setOnAction(e -> syncDisk());
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        openFileLabel.getStyleClass().add("notepad-open-file");
+
+        HBox bar = new HBox(newNameField, create, saveButton, revertButton, sync, spacer, openFileLabel);
+        bar.getStyleClass().add("toolbar");
+        bar.setAlignment(Pos.CENTER_LEFT);
+        return bar;
+    }
+
+    private HBox buildStatusBar() {
+        countLabel.getStyleClass().add("notepad-count");
+        statusLabel.getStyleClass().add("notepad-status");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox bar = new HBox(statusLabel, spacer, countLabel);
+        bar.getStyleClass().add("notepad-status-bar");
+        bar.setAlignment(Pos.CENTER_LEFT);
+        return bar;
+    }
+
+    // ────────────────────────────── 탐색 ──────────────────────────────
+
+    private void reloadDirectory() {
+        SystemCallResult result = kernelService.call(SystemCallType.LS, directory, ".");
+        if (!result.isSuccess()) {
+            status(result.getMessage());
+            return;
+        }
+        FileListDto listing = result.dataAs(FileListDto.class);
+        directoryLabel.setText(directory);
+        fileList.getItems().setAll(listing.entries());
+    }
+
+    private void goUp() {
+        if (ROOT.equals(directory)) {
+            return;
+        }
+        int cut = directory.lastIndexOf('/');
+        directory = (cut <= 0) ? ROOT : directory.substring(0, cut);
+        reloadDirectory();
+    }
+
+    private void onEntrySelected(DirectoryEntryDto entry) {
+        if ("DIRECTORY".equals(entry.type())) {
+            directory = join(directory, entry.name());
+            reloadDirectory();
+            return;
+        }
+        open(entry.name());
+    }
+
+    private void open(String name) {
+        String path = join(directory, name);
+
+        // 이 파일의 초안을 이미 들고 있으면 디스크를 다시 읽지 않는다.
+        // 읽어 버리면 사용자가 방금 친 것이 조용히 사라진다.
+        if (!drafts.containsKey(path)) {
+            SystemCallResult result = kernelService.call(SystemCallType.CAT, directory, name);
+            if (!result.isSuccess()) {
+                status(result.getMessage());
+                return;
+            }
+            String content = result.dataAs(FileContentDto.class).content();
+            saved.put(path, content);
+            drafts.put(path, content);
+        }
+
+        openFile = name;
+        loading = true;
+        editor.setText(drafts.get(path));
+        loading = false;
+        editor.positionCaret(editor.getText().length());
+        updateEditorState();
+        status(path + " 를 열었습니다.");
+    }
+
+    // ────────────────────────────── 편집 ──────────────────────────────
+
+    private void onEdited(String text) {
+        if (loading || openFile == null) {
+            return;
+        }
+        drafts.put(currentPath(), text);
+        updateEditorState();
+        // 목록의 점(•)을 다시 그리게 한다. 항목 자체는 그대로이므로 셀만 새로 만든다.
+        fileList.refresh();
+    }
+
+    private void createFile() {
+        String name = newNameField.getText().trim();
+        if (name.isEmpty()) {
+            status("만들 파일 이름을 입력하세요.");
+            return;
+        }
+        SystemCallResult result = kernelService.call(SystemCallType.TOUCH, directory, name);
+        if (!result.isSuccess()) {
+            status(result.getMessage());
+            return;
+        }
+        newNameField.clear();
+        reloadDirectory();
+        open(name);
+        selectInList(name);
+        editor.requestFocus();
+    }
+
+    private void save() {
+        if (openFile == null) {
+            return;
+        }
+        String path = currentPath();
+        String text = editor.getText();
+
+        SystemCallResult result = kernelService.call(SystemCallType.WRITE, directory, openFile, text);
+        if (!result.isSuccess()) {
+            status(result.getMessage());
+            return;
+        }
+        WriteResultDto written = result.dataAs(WriteResultDto.class);
+        saved.put(path, text);
+        drafts.put(path, text);
+
+        reloadDirectory();
+        selectInList(openFile);
+        updateEditorState();
+        status("%s 에 %d바이트를 저장했습니다. 재부팅까지 남기려면 '디스크에 기록'을 누르세요."
+                .formatted(path, written.bytesWritten()));
+    }
+
+    private void revert() {
+        if (openFile == null) {
+            return;
+        }
+        String path = currentPath();
+        drafts.remove(path);
+        saved.remove(path);
+        open(openFile);
+        fileList.refresh();
+        status(path + " 를 디스크의 내용으로 되돌렸습니다.");
+    }
+
+    private void syncDisk() {
+        SystemCallResult result = kernelService.call(SystemCallType.SYNC);
+        if (!result.isSuccess()) {
+            status(result.getMessage());
+            return;
+        }
+        SyncResultDto sync = result.dataAs(SyncResultDto.class);
+        if (sync.persisted()) {
+            status("%s 에 %d바이트를 기록했습니다. (블록 %d/%d · inode %d/%d)".formatted(
+                    sync.imagePath(), sync.bytesWritten(),
+                    sync.usedBlocks(), sync.totalBlocks(),
+                    sync.usedInodes(), sync.totalInodes()));
+        } else {
+            status("디스크 이미지가 설정되어 있지 않아 메모리에만 남습니다. "
+                    + "(--disk 옵션으로 커널을 띄우면 disk.img 에 영속됩니다)");
+        }
+    }
+
+    // ────────────────────────────── 보조 ──────────────────────────────
+
+    private void onKeyPressed(KeyEvent event) {
+        if (event.getCode() == KeyCode.S && event.isShortcutDown()) {
+            save();
+            event.consume();
+        }
+    }
+
+    private void updateEditorState() {
+        boolean opened = openFile != null;
+        editor.setDisable(!opened);
+        saveButton.setDisable(!opened || !isDirty(currentPath()));
+        revertButton.setDisable(!opened);
+
+        if (!opened) {
+            openFileLabel.setText("열린 파일 없음");
+            countLabel.setText("");
+            return;
+        }
+        String path = currentPath();
+        openFileLabel.setText(isDirty(path) ? path + " •" : path);
+        countLabel.setText("%d자 · %d바이트".formatted(
+                editor.getText().length(),
+                editor.getText().getBytes(StandardCharsets.UTF_8).length));
+    }
+
+    private void selectInList(String name) {
+        for (DirectoryEntryDto entry : fileList.getItems()) {
+            if (entry.name().equals(name) && !"DIRECTORY".equals(entry.type())) {
+                fileList.getSelectionModel().select(entry);
+                return;
+            }
+        }
+    }
+
+    private boolean isDirty(String path) {
+        if (path == null) {
+            return false;
+        }
+        String draft = drafts.get(path);
+        return draft != null && !draft.equals(saved.get(path));
+    }
+
+    private String currentPath() {
+        return openFile == null ? null : join(directory, openFile);
+    }
+
+    private void status(String message) {
+        statusLabel.setText(message);
+    }
+
+    private static String join(String parent, String name) {
+        return ROOT.equals(parent) ? ROOT + name : parent + "/" + name;
+    }
+
+    void dispose() {
+        // 메모장은 주기 갱신을 구독하지 않는다. 파일 시스템은 사용자가 바꿀 때만 바뀐다.
+    }
+
+    /** 아이콘 + 이름 + 저장되지 않은 변경 표시로 구성된 항목 셀. */
+    private final class EntryCell extends ListCell<DirectoryEntryDto> {
+
+        EntryCell() {
+        }
+
+        @Override
+        protected void updateItem(DirectoryEntryDto entry, boolean empty) {
+            super.updateItem(entry, empty);
+            if (empty || entry == null) {
+                setGraphic(null);
+                setText(null);
+                return;
+            }
+            boolean isDirectory = "DIRECTORY".equals(entry.type());
+
+            Label name = new Label(entry.name());
+            name.getStyleClass().add("entry-name");
+
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+
+            HBox row = new HBox(
+                    Glyphs.stroked(isDirectory ? Glyphs.FOLDER : Glyphs.NOTEPAD, 15, "entry-icon"),
+                    name,
+                    spacer);
+            row.setAlignment(Pos.CENTER_LEFT);
+            row.getStyleClass().add("entry-row");
+
+            if (isDirectory) {
+                row.getChildren().add(Glyphs.stroked(Glyphs.CHEVRON_RIGHT, 13, "entry-chevron"));
+            } else {
+                Label mark = new Label(isDirty(join(directory, entry.name()))
+                        ? "•"
+                        : entry.size() + "B");
+                mark.getStyleClass().add("entry-size");
+                mark.pseudoClassStateChanged(Styles.ON, isDirty(join(directory, entry.name())));
+                row.getChildren().add(mark);
+            }
+
+            setGraphic(row);
+            setText(null);
+        }
+    }
+}
+```
+
+---
+
+# 21. TerminalApp.java
 
 **Path**
 `src/main/java/forgeos/app/terminal/TerminalApp.java`
@@ -1897,7 +3533,7 @@ public final class TerminalApp implements ForgeApp {
 
 ---
 
-# 16. TerminalView.java
+# 22. TerminalView.java
 
 **Path**
 `src/main/java/forgeos/app/terminal/TerminalView.java`
@@ -2143,7 +3779,7 @@ final class TerminalView extends BorderPane {
 
 ---
 
-# 17. BootConsole.java
+# 23. BootConsole.java
 
 **Path**
 `src/main/java/forgeos/boot/BootConsole.java`
@@ -2363,7 +3999,7 @@ final class BootConsole extends StackPane {
 
 ---
 
-# 18. BootSequence.java
+# 24. BootSequence.java
 
 **Path**
 `src/main/java/forgeos/boot/BootSequence.java`
@@ -2574,7 +4210,7 @@ public final class BootSequence extends StackPane {
 
 ---
 
-# 19. BootVideo.java
+# 25. BootVideo.java
 
 **Path**
 `src/main/java/forgeos/boot/BootVideo.java`
@@ -2719,12 +4355,13 @@ final class BootVideo extends StackPane {
 
 ---
 
-# 20. KernelService.java
+# 26. KernelService.java
 
 **Path**
 `src/main/java/forgeos/core/KernelService.java`
 
 ```java
+
 package forgeos.core;
 
 import forgeframework.api.ForgeConfig;
@@ -2974,7 +4611,7 @@ public final class KernelService {
 
 ---
 
-# 21. DesktopPane.java
+# 27. DesktopPane.java
 
 **Path**
 `src/main/java/forgeos/desktop/DesktopPane.java`
@@ -3131,7 +4768,7 @@ public final class DesktopPane extends StackPane {
 
 ---
 
-# 22. DockView.java
+# 28. DockView.java
 
 **Path**
 `src/main/java/forgeos/desktop/DockView.java`
@@ -3141,23 +4778,19 @@ package forgeos.desktop;
 
 import forgeos.app.ForgeApp;
 import forgeos.ui.Glyphs;
-import forgeos.ui.Motion;
-import forgeos.ui.SpringValue;
 import forgeos.ui.Styles;
 import forgeos.wm.WindowManager;
+import javafx.animation.FadeTransition;
 import javafx.collections.ListChangeListener;
-import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
 import javafx.scene.Node;
-import javafx.scene.control.Tooltip;
-import javafx.scene.input.MouseEvent;
+import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.util.Duration;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -3165,52 +4798,69 @@ import java.util.Map;
 /**
  * 화면 하단의 Dock.
  *
- * <h2>확대(magnification)</h2>
- * <p>포인터에 가까운 아이콘일수록 커진다. 단순한 장식처럼 보이지만 실제로는
- * 작은 아이콘을 정확히 겨냥하는 비용을 낮춰 준다 — 목표가 커지면 맞히기 쉽다.</p>
+ * <h2>확대 대신 이름표</h2>
+ * <p>처음에는 macOS 처럼 포인터에 가까운 아이콘을 키웠지만, 어떤 감쇠 곡선을 써도
+ * <b>겨냥한 것 말고 옆 아이콘까지 함께 들리는</b> 느낌을 지울 수 없었다. 아이콘이
+ * 네 개뿐이고 간격이 넓은 Dock 에서는 확대가 겨냥을 돕기는커녕 "무엇을 가리키고
+ * 있는가"를 오히려 흐린다.</p>
  *
- * <p>확대 배율은 CSS로 뺄 수 없어(스케일은 레이아웃이 아니라 변환이다) 여기
- * 상수로 둔다. 대신 값 자체는 포인터를 <b>따라가는</b> 스프링으로 적용한다.
- * 목표 배율을 즉시 대입하면 포인터를 빠르게 움직일 때 아이콘이 계단처럼
- * 튀는데, 스프링을 거치면 손의 궤적을 따라 흐른다.</p>
+ * <p>그래서 크기는 건드리지 않고, 가리킨 아이콘 <b>바로 위 가운데</b>에 앱 이름만
+ * 띄운다. 답해야 할 질문("이게 무슨 앱이지?")에 정확히 답하면서 화면은 가만히 있는다.</p>
+ *
+ * <h2>왜 Tooltip 이 아닌가</h2>
+ * <p>JavaFX {@code Tooltip}은 포인터를 따라 <b>아래·오른쪽</b>에 뜬다. Dock 은 화면
+ * 맨 아래에 있으므로 이름표가 아이콘을 가리거나 화면 밖으로 밀린다. 게다가 Tooltip
+ * 은 별도의 네이티브 팝업 창이라, 데스크탑 안에서 모든 것이 노드인 이 프로젝트의
+ * 구성과도 어긋난다. 그냥 Dock 안의 라벨 하나로 만든다.</p>
+ *
+ * <p>이름표는 {@code managed = false} 다. 레이아웃에 참여하면 Dock 높이가 이름표
+ * 몫만큼 커져서 작업 영역이 줄고, 이름표가 없을 때도 그 공백이 남는다.</p>
  */
-final class DockView extends HBox {
-
-    /** 포인터 바로 아래 아이콘의 최대 배율. */
-    private static final double MAX_SCALE = 1.38;
-
-    /**
-     * 확대가 퍼지는 거리(px). <b>아이콘 사각형의 가장자리로부터</b> 잰다.
-     *
-     * <p>중심으로부터 재면 두 가지가 동시에 잘못된다. 포인터가 아이콘 안에서
-     * 가장자리 쪽으로 가기만 해도 그 아이콘이 줄어들고, 반대로 이웃 아이콘은
-     * 중심 간 거리(아이콘 폭 + 간격)만큼 떨어져 있는데도 크게 반응한다.
-     * 가장자리 기준으로 바꾸면 아이콘 안에서는 거리가 0이라 항상 최대 배율이고,
-     * 이웃은 순수하게 <b>사이 간격</b>만큼만 떨어진 것으로 계산된다.</p>
-     */
-    private static final double SPREAD = 26;
+final class DockView extends StackPane {
 
     /** 아이콘 한 변(px). */
     private static final double ICON_SIZE = 30;
 
+    /** 이름표와 Dock 윗면 사이 간격(px). */
+    private static final double LABEL_GAP = 10;
+
+    /** 이름표가 나타나고 사라지는 시간. 스치듯 지나가도 따라올 만큼 짧아야 한다. */
+    private static final Duration LABEL_FADE = Duration.millis(110);
+
     private final WindowManager windowManager;
+    private final HBox bar = new HBox();
+    private final Label nameLabel = new Label();
     private final Map<String, DockItem> items = new LinkedHashMap<>();
-    private final List<DockItem> ordered = new ArrayList<>();
+
+    private FadeTransition labelFade;
 
     DockView(WindowManager windowManager, List<ForgeApp> apps) {
         this.windowManager = windowManager;
-        getStyleClass().add("dock");
+        getStyleClass().add("dock-host");
         setPickOnBounds(false);
 
+        bar.getStyleClass().add("dock");
         for (ForgeApp app : apps) {
             DockItem item = new DockItem(app);
             items.put(app.id(), item);
-            ordered.add(item);
-            getChildren().add(item);
+            bar.getChildren().add(item);
         }
 
-        addEventFilter(MouseEvent.MOUSE_MOVED, e -> magnify(e.getX()));
-        setOnMouseExited(e -> magnify(Double.NaN));
+        nameLabel.getStyleClass().add("dock-name");
+        nameLabel.setManaged(false);
+        nameLabel.setMouseTransparent(true);
+        nameLabel.setVisible(false);
+        nameLabel.setOpacity(0);
+
+        getChildren().addAll(bar, nameLabel);
+
+        // 이름표는 Dock 을 완전히 벗어날 때만 사라진다. 아이콘 사이를 지나가는 동안
+        // 깜빡이면 눈이 피로해진다 — 인접한 아이콘으로 옮겨갈 때는 자리만 옮긴다.
+        bar.hoverProperty().addListener((obs, was, now) -> {
+            if (!now) {
+                hideName();
+            }
+        });
 
         windowManager.runningAppIds().addListener(
                 (ListChangeListener<String>) change -> refreshRunningState());
@@ -3219,26 +4869,42 @@ final class DockView extends HBox {
         windowManager.setDockAnchor(this::anchorFor);
     }
 
-    private void magnify(double pointerX) {
-        for (DockItem item : ordered) {
-            item.scaleTo(Double.isNaN(pointerX) ? 1 : scaleFor(item, pointerX));
-        }
+    /**
+     * 가리킨 아이콘 바로 위 가운데에 이름표를 놓는다.
+     *
+     * <p>세로 위치는 아이콘이 아니라 <b>Dock 전체의 윗면</b>을 기준으로 잡는다.
+     * 아이콘 위쪽 여백을 기준으로 하면 이름표가 유리 바 안쪽에 걸쳐 앉아서,
+     * Dock 위에 떠 있는 것이 아니라 Dock 에 박힌 것처럼 보인다.</p>
+     */
+    private void showName(DockItem item, String title) {
+        nameLabel.setText(title);
+        nameLabel.applyCss();
+        nameLabel.autosize();
+
+        Point2D iconCenter = item.localToScene(item.getWidth() / 2, 0);
+        double centerX = sceneToLocal(iconCenter).getX();
+
+        nameLabel.setLayoutX(centerX - nameLabel.getWidth() / 2);
+        nameLabel.setLayoutY(-nameLabel.getHeight() - LABEL_GAP);
+
+        fadeLabelTo(1);
     }
 
-    /**
-     * 포인터 위치에 대한 아이콘 하나의 목표 배율.
-     *
-     * <p>아이콘 사각형 <b>안</b>이면 거리가 0이라 최대 배율이 그대로 나온다.
-     * 밖이면 사각형에서 벗어난 만큼만 거리로 세고, 그 거리에 가우시안 감쇠를
-     * 적용한다. 이웃 아이콘은 아이콘 사이 간격만큼 떨어져 있으므로 살짝만
-     * 들리고, 그 너머는 사실상 움직이지 않는다.</p>
-     */
-    private static double scaleFor(DockItem item, double pointerX) {
-        Bounds bounds = item.getBoundsInParent();
-        double distance = Math.max(0,
-                Math.max(bounds.getMinX() - pointerX, pointerX - bounds.getMaxX()));
-        double falloff = Math.exp(-(distance * distance) / (SPREAD * SPREAD));
-        return 1 + (MAX_SCALE - 1) * falloff;
+    private void hideName() {
+        fadeLabelTo(0);
+    }
+
+    private void fadeLabelTo(double target) {
+        if (labelFade != null) {
+            labelFade.stop();
+        }
+        if (target > 0) {
+            nameLabel.setVisible(true);
+        }
+        labelFade = new FadeTransition(LABEL_FADE, nameLabel);
+        labelFade.setToValue(target);
+        labelFade.setOnFinished(e -> nameLabel.setVisible(nameLabel.getOpacity() > 0));
+        labelFade.play();
     }
 
     private void refreshRunningState() {
@@ -3263,7 +4929,6 @@ final class DockView extends HBox {
     private final class DockItem extends StackPane {
 
         private final Circle runningDot = new Circle();
-        private final SpringValue scale;
 
         DockItem(ForgeApp app) {
             getStyleClass().add("dock-item");
@@ -3280,26 +4945,16 @@ final class DockView extends HBox {
             column.getStyleClass().add("dock-item-column");
             getChildren().add(column);
 
-            Tooltip tooltip = new Tooltip(app.title());
-            tooltip.setShowDelay(Duration.millis(350));
-            Tooltip.install(this, tooltip);
-
-            scale = new SpringValue(value -> {
-                tile.setScaleX(value);
-                tile.setScaleY(value);
-                // 커질 때 아래쪽이 Dock 바닥을 뚫지 않도록 위로 밀어 올린다.
-                tile.setTranslateY(-(value - 1) * ICON_SIZE * 0.55);
-            }).tune(Motion.RESPONSE_SNAPPY, Motion.DAMPING_STANDARD);
-            scale.reset(1);
+            hoverProperty().addListener((obs, was, now) -> {
+                if (now) {
+                    showName(this, app.title());
+                }
+            });
 
             // 눌리는 순간 반응한다. 떼는 순간까지 기다리면 죽은 버튼처럼 느껴진다.
-            setOnMousePressed(e -> tile.setOpacity(0.65));
+            setOnMousePressed(e -> tile.setOpacity(0.6));
             setOnMouseReleased(e -> tile.setOpacity(1));
             setOnMouseClicked(e -> windowManager.toggle(app));
-        }
-
-        void scaleTo(double target) {
-            scale.setTarget(target);
         }
 
         void setRunning(boolean running) {
@@ -3312,7 +4967,7 @@ final class DockView extends HBox {
 
 ---
 
-# 23. MenuBarView.java
+# 29. MenuBarView.java
 
 **Path**
 `src/main/java/forgeos/desktop/MenuBarView.java`
@@ -3353,7 +5008,7 @@ import java.util.List;
  * 화면 상단의 메뉴바.
  *
  * <p>왼쪽은 "지금 무엇을 쓰고 있는가"(Forge 마크 + 활성 창 이름), 오른쪽은
- * "지금 커널이 어떤 상태인가"(프로세스 수, 메모리, 가동 시간, 시계)다.
+ * "지금 커널이 어떤 상태인가"(프로세스 수, 메모리, 스왑, 가동 시간, 시계)다.
  * 어느 앱을 쓰고 있든 커널 상태가 항상 한 줄로 보이는 것이 이 시뮬레이터의
  * 핵심 가치라고 보고 자리를 내줬다.</p>
  */
@@ -3367,6 +5022,7 @@ final class MenuBarView extends HBox {
     private final Label activeAppLabel = new Label("ForgeOS");
     private final Label processChip = chip("프로세스 —");
     private final Label memoryChip = chip("메모리 —");
+    private final Label swapChip = chip("스왑 —");
     private final Label uptimeChip = chip("가동 —");
     private final Label clockLabel = new Label();
 
@@ -3391,7 +5047,7 @@ final class MenuBarView extends HBox {
                 activeAppLabel,
                 forgeMenu(windowManager, onQuit),
                 spacer,
-                processChip, memoryChip, uptimeChip, themeToggle(theme), clockLabel);
+                processChip, memoryChip, swapChip, uptimeChip, themeToggle(theme), clockLabel);
 
         windowManager.activeWindowProperty().addListener((obs, old, now) ->
                 activeAppLabel.setText(now == null ? "ForgeOS" : now.title()));
@@ -3479,6 +5135,16 @@ final class MenuBarView extends HBox {
             int total = snapshot.totalFrames();
             double ratio = total == 0 ? 0 : (double) snapshot.usedFrames() / total;
             memoryChip.setText("메모리 %.0f%%".formatted(ratio * 100));
+
+            // 스왑이 꺼진 커널(swapSlots=0)에서는 칩 자체를 감춘다. 항상 "0"인 숫자는
+            // 자리만 먹고 아무것도 알려 주지 않는다.
+            boolean swapOn = snapshot.swapTotalSlots() > 0;
+            swapChip.setVisible(swapOn);
+            swapChip.setManaged(swapOn);
+            if (swapOn) {
+                swapChip.setText("스왑 %d/%d · 폴트 %d".formatted(
+                        snapshot.swapUsedSlots(), snapshot.swapTotalSlots(), snapshot.pageFaults()));
+            }
         }
 
         SystemCallResult uptime = kernelService.call(SystemCallType.UPTIME);
@@ -3510,7 +5176,7 @@ final class MenuBarView extends HBox {
 
 ---
 
-# 24. Wallpaper.java
+# 30. Wallpaper.java
 
 **Path**
 `src/main/java/forgeos/desktop/Wallpaper.java`
@@ -3551,9 +5217,11 @@ import javafx.scene.shape.Rectangle;
  * 짧은 변에 비례해 배율을 정하되 위아래로 잘라, 어떤 창 크기에서도 비슷한 비중으로
  * 보이게 한다.</p>
  *
- * <h2>왜 가운데가 아닌가</h2>
- * <p>창은 화면 한가운데에 열린다. 로고를 정중앙에 두면 창을 열 때마다 로고
- * 한가운데가 가려져 매번 반쪽만 보인다. 살짝 왼쪽 위로 비켜 앉힌다.</p>
+ * <h2>정중앙</h2>
+ * <p>마크·동심원·워드마크는 모두 데스크탑의 정중앙에 놓인다. 한때 창이 화면
+ * 가운데에 열린다는 이유로 왼쪽 위로 비켜 앉혔지만, 창이 하나도 없을 때 화면이
+ * 눈에 띄게 기울어 보였다. 배경화면은 창을 피해 숨는 물건이 아니라 화면의 축을
+ * 잡아 주는 물건이므로 중앙이 맞다 — 창에 가려지는 것은 배경화면의 정상적인 처지다.</p>
  */
 final class Wallpaper extends StackPane {
 
@@ -3574,12 +5242,6 @@ final class Wallpaper extends StackPane {
 
     /** 배율 상한 — 큰 화면에서 배경이 주인공이 되면 안 된다. */
     private static final double MAX_SCALE = 1.25;
-
-    /** 중앙에서 왼쪽으로 비켜 앉는 정도(화면 폭 대비). */
-    private static final double OFFSET_X_RATIO = 0.07;
-
-    /** 중앙에서 위로 올라가는 정도(화면 높이 대비). */
-    private static final double OFFSET_Y_RATIO = 0.05;
 
     private final StackPane rings;
     private final VBox brand;
@@ -3619,11 +5281,11 @@ final class Wallpaper extends StackPane {
         // 맞고, 무엇보다 마크가 마우스를 먹어 창 드래그를 방해하면 안 된다.
         setMouseTransparent(true);
 
-        widthProperty().addListener((obs, old, now) -> relayoutBrand());
-        heightProperty().addListener((obs, old, now) -> relayoutBrand());
+        widthProperty().addListener((obs, old, now) -> rescaleBrand());
+        heightProperty().addListener((obs, old, now) -> rescaleBrand());
     }
 
-    private void relayoutBrand() {
+    private void rescaleBrand() {
         double width = getWidth();
         double height = getHeight();
 
@@ -3635,19 +5297,17 @@ final class Wallpaper extends StackPane {
         }
 
         double scale = clamp(Math.min(width, height) / REFERENCE, MIN_SCALE, MAX_SCALE);
-        double offsetX = -width * OFFSET_X_RATIO;
-        double offsetY = -height * OFFSET_Y_RATIO;
 
-        // 마크와 동심원은 같은 중심을 공유해야 하므로 같은 값으로 함께 움직인다.
-        apply(rings, scale, offsetX, offsetY);
-        apply(brand, scale, offsetX, offsetY);
+        // 위치는 손대지 않는다. 둘 다 StackPane 의 기본 정렬(가운데)에 맡기고,
+        // 배율만 화면 크기를 따라가게 한다. 스케일은 노드의 중심을 기준으로
+        // 걸리므로 배율이 바뀌어도 중심은 그대로다.
+        applyScale(rings, scale);
+        applyScale(brand, scale);
     }
 
-    private static void apply(Node node, double scale, double offsetX, double offsetY) {
+    private static void applyScale(Node node, double scale) {
         node.setScaleX(scale);
         node.setScaleY(scale);
-        node.setTranslateX(offsetX);
-        node.setTranslateY(offsetY);
     }
 
     private static Circle ring(double radius) {
@@ -3665,7 +5325,7 @@ final class Wallpaper extends StackPane {
 
 ---
 
-# 25. ForgeMark.java
+# 31. ForgeMark.java
 
 **Path**
 `src/main/java/forgeos/ui/ForgeMark.java`
@@ -3792,7 +5452,7 @@ public final class ForgeMark extends Group {
 
 ---
 
-# 26. Glyphs.java
+# 32. Glyphs.java
 
 **Path**
 `src/main/java/forgeos/ui/Glyphs.java`
@@ -3869,6 +5529,49 @@ public final class Glyphs {
     /** 달 — 다크 테마. */
     public static final String MOON = "M20.2 14.8A8.6 8.6 0 0 1 9.2 3.8A8.7 8.7 0 1 0 20.2 14.8Z";
 
+    /** Notepad — 줄이 그어진 종이와 연필. */
+    public static final String NOTEPAD = "M6.4 3.8H14L17.6 7.4V12"
+            + " M6.4 3.8V20.2H12 M14 3.8V7.4H17.6"
+            + " M9.2 9.6H13.6 M9.2 12.8H12.4"
+            + " M20.4 13.6L21.8 15L16.2 20.6L13.8 21.2L14.4 18.8Z";
+
+    /** Firefox — 자오선이 그려진 지구본. WebKit 이 그리는 웹이 여기서 열린다. */
+    public static final String BROWSER = "M12 3.4a8.6 8.6 0 1 0 0 17.2a8.6 8.6 0 1 0 0-17.2"
+            + " M3.4 12H20.6"
+            + " M12 3.4c2.6 2.4 4 5.4 4 8.6s-1.4 6.2-4 8.6c-2.6-2.4-4-5.4-4-8.6s1.4-6.2 4-8.6";
+
+    /** 저장 — 받침 위로 내려앉는 화살표. */
+    public static final String SAVE = "M12 4.6V14.6 M8.4 11.2L12 14.8L15.6 11.2"
+            + " M5.6 17V18.6A1.4 1.4 0 0 0 7 20H17A1.4 1.4 0 0 0 18.4 18.6V17";
+
+    /** fork — 한 줄기에서 갈라져 나온 가지. */
+    public static final String FORK = "M7.5 5.6m-2.2 0a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0-4.4 0"
+            + " M16.5 18.4m-2.2 0a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0-4.4 0"
+            + " M7.5 7.8V12.2A3 3 0 0 0 10.5 15.2H13.5A3 3 0 0 1 16.5 18.2";
+
+    /** disk.img — 겹쳐 쌓인 원통. 영속화된 파일 시스템을 가리킨다. */
+    public static final String DISK = "M12 4.4C15.9 4.4 19 5.5 19 6.9S15.9 9.4 12 9.4"
+            + "S5 8.3 5 6.9S8.1 4.4 12 4.4Z"
+            + " M5 6.9V17.1C5 18.5 8.1 19.6 12 19.6S19 18.5 19 17.1V6.9"
+            + " M5 12C5 13.4 8.1 14.5 12 14.5S19 13.4 19 12";
+
+    /** 뒤로. */
+    public static final String ARROW_LEFT = "M14.6 6.4L9 12L14.6 17.6";
+
+    /** 앞으로. */
+    public static final String ARROW_RIGHT = "M9.4 6.4L15 12L9.4 17.6";
+
+    /** 홈 — 브라우저 시작 페이지. */
+    public static final String HOME = "M4.4 11.2L12 4.6L19.6 11.2"
+            + " M6.6 9.6V19.4H17.4V9.6 M10.2 19.4V14.4H13.8V19.4";
+
+    /** 닫기(탭·패널). 신호등의 그것과 모양은 같지만 쓰임이 달라 따로 둔다. */
+    public static final String CLOSE = "M7.6 7.6L16.4 16.4 M16.4 7.6L7.6 16.4";
+
+    /** 자물쇠 — 주소창의 https 표시. */
+    public static final String LOCK = "M8.2 10.6V8.4A3.8 3.8 0 0 1 15.8 8.4V10.6"
+            + " M6.8 10.6H17.2V18.8H6.8Z";
+
     /** 신호등 — 닫기. */
     public static final String LIGHT_CLOSE = "M8.6 8.6L15.4 15.4 M15.4 8.6L8.6 15.4";
 
@@ -3931,7 +5634,7 @@ public final class Glyphs {
 
 ---
 
-# 27. Motion.java
+# 33. Motion.java
 
 **Path**
 `src/main/java/forgeos/ui/Motion.java`
@@ -4104,7 +5807,7 @@ public final class Motion {
 
 ---
 
-# 28. SpringValue.java
+# 34. SpringValue.java
 
 **Path**
 `src/main/java/forgeos/ui/SpringValue.java`
@@ -4296,7 +5999,7 @@ public final class SpringValue extends AnimationTimer {
 
 ---
 
-# 29. Styles.java
+# 35. Styles.java
 
 **Path**
 `src/main/java/forgeos/ui/Styles.java`
@@ -4338,7 +6041,7 @@ public final class Styles {
 
 ---
 
-# 30. ThemeManager.java
+# 36. ThemeManager.java
 
 **Path**
 `src/main/java/forgeos/ui/ThemeManager.java`
@@ -4523,7 +6226,7 @@ public final class ThemeManager {
 
 ---
 
-# 31. ToggleSwitch.java
+# 37. ToggleSwitch.java
 
 **Path**
 `src/main/java/forgeos/ui/ToggleSwitch.java`
@@ -4643,7 +6346,7 @@ public final class ToggleSwitch extends StackPane {
 
 ---
 
-# 32. ForgeWindow.java
+# 38. ForgeWindow.java
 
 **Path**
 `src/main/java/forgeos/wm/ForgeWindow.java`
@@ -5193,7 +6896,7 @@ public final class ForgeWindow extends VBox {
 
 ---
 
-# 33. TrafficLights.java
+# 39. TrafficLights.java
 
 **Path**
 `src/main/java/forgeos/wm/TrafficLights.java`
@@ -5276,7 +6979,7 @@ final class TrafficLights extends HBox {
 
 ---
 
-# 34. WindowManager.java
+# 40. WindowManager.java
 
 **Path**
 `src/main/java/forgeos/wm/WindowManager.java`
@@ -5285,6 +6988,7 @@ final class TrafficLights extends HBox {
 package forgeos.wm;
 
 import forgeos.app.AppContext;
+import forgeos.app.AppProcessTable;
 import forgeos.app.AppInstance;
 import forgeos.app.ForgeApp;
 import forgeos.core.KernelService;
@@ -5332,6 +7036,9 @@ public final class WindowManager extends Pane {
     private static final double OPEN_SCALE = 0.94;
 
     private final AppContext context;
+
+    /** 열려 있는 창과 커널 프로세스를 묶어 두는 표. */
+    private final AppProcessTable processes;
     private final Map<String, ForgeWindow> openWindows = new LinkedHashMap<>();
     private final Map<ForgeWindow, Runnable> disposers = new HashMap<>();
     private final ObservableList<String> runningAppIds = FXCollections.observableArrayList();
@@ -5349,6 +7056,7 @@ public final class WindowManager extends Pane {
      */
     public WindowManager(KernelService kernelService) {
         this.context = new AppContext(kernelService, this);
+        this.processes = new AppProcessTable(kernelService, this::closeByAppId);
         getStyleClass().add("window-layer");
         // 레이어 자체는 배경이 없다. 빈 곳을 클릭하면 아래(바탕화면)로 통과해야 한다.
         setPickOnBounds(false);
@@ -5383,8 +7091,25 @@ public final class WindowManager extends Pane {
         runningAppIds.add(app.id());
         getChildren().add(window);
 
+        // 창을 화면에 올린 다음에 프로세스를 만든다. 커널이 없거나 내려간 상태라도
+        // 창은 떠야 하기 때문이다 — 종료 화면에서 앱을 여는 것이 예외로 터지면 안 된다.
+        processes.launch(app);
+
         focus(window);
         Motion.materialize(window, OPEN_SCALE, Duration.millis(240));
+    }
+
+    /**
+     * 프로세스가 사라진 앱의 창을 닫는다.
+     *
+     * <p>활성 상태 보기에서 앱 프로세스를 강제 종료했을 때 {@code AppProcessTable}이
+     * 부른다. 표에서 죽인 것이 화면에도 반영되어야 표가 장식이 아니게 된다.</p>
+     */
+    private void closeByAppId(String appId) {
+        ForgeWindow window = openWindows.get(appId);
+        if (window != null) {
+            close(window);
+        }
     }
 
     /**
@@ -5439,6 +7164,7 @@ public final class WindowManager extends Pane {
             getChildren().remove(window);
             openWindows.remove(window.appId());
             runningAppIds.remove(window.appId());
+            processes.terminate(window.appId());
 
             Runnable dispose = disposers.remove(window);
             if (dispose != null) {
@@ -5566,7 +7292,7 @@ public final class WindowManager extends Pane {
 
 ---
 
-# 35. module-info.java
+# 41. module-info.java
 
 **Path**
 `src/main/java/module-info.java`
@@ -5592,6 +7318,13 @@ module forgeos {
     /** 부팅 애니메이션(MP4) 재생용. 이 모듈이 빠지면 시네마틱 부팅 2단계가 통째로 사라진다. */
     requires javafx.media;
 
+    /**
+     * Firefox 앱의 렌더링 엔진(WebView). JavaFX 가 품는 엔진은 Gecko 가 아니라
+     * WebKit 이므로 "Firefox 를 띄운다"가 아니라 "Firefox 를 닮은 브라우저를
+     * ForgeOS 안에서 돌린다"가 정확한 표현이다.
+     */
+    requires javafx.web;
+
     /** 커널. ForgeOS의 모든 상태는 여기서 나온다. */
     requires forgeframework;
 
@@ -5605,7 +7338,7 @@ module forgeos {
 
 ---
 
-# 36. apps.css
+# 42. apps.css
 
 **Path**
 `src/main/resources/forgeos/css/apps.css`
@@ -5718,9 +7451,20 @@ module forgeos {
     -fx-background-color: -fill-subtle;
     -fx-border-color: transparent transparent transparent -edge-line;
     -fx-border-width: 0 0 0 1px;
-    -fx-padding: 18px 20px;
-    -fx-spacing: 20px;
-    -fx-pref-width: 236px;
+    -fx-padding: 18px 18px 22px 18px;
+    -fx-spacing: 18px;
+    -fx-pref-width: 250px;
+}
+
+/* 게이지 넷 + 정책 상자는 작은 창에서 세로가 모자란다. 잘리는 대신 스크롤한다.
+   폭은 스크롤 창이 잡아 준다 — 안쪽 VBox 에만 pref 를 주면 스크롤바가 겹쳐 나온다. */
+.monitor-sidebar-scroll {
+    -fx-background-color: transparent;
+    -fx-pref-width: 268px;
+}
+
+.monitor-sidebar-scroll > .viewport {
+    -fx-background-color: transparent;
 }
 
 .sidebar-note {
@@ -5756,6 +7500,12 @@ module forgeos {
 
 .accent-cyan {
     -fx-stroke: -electric-cyan;
+}
+
+/* 스왑은 "메모리가 디스크로 밀려났다"는 다른 층위의 사건이라 브랜드 3색 밖의
+   보라를 쓴다. 로고의 불티와 같은 색이므로 시스템 밖으로 튀지는 않는다. */
+.accent-violet {
+    -fx-stroke: -forge-violet;
 }
 
 .donut-value {
@@ -5805,6 +7555,68 @@ module forgeos {
 .state-terminated {
     -fx-background-color: -danger-tint;
     -fx-text-fill: -danger-text;
+}
+
+/* ── 탭 안쪽 ── */
+
+.monitor-tabs {
+    -fx-background-color: transparent;
+}
+
+.monitor-pane {
+    -fx-background-color: transparent;
+}
+
+.monitor-memory {
+    -fx-spacing: 0;
+}
+
+/* 표 위에 붙는 작은 제목. 표가 둘 겹쳐 있으면 어느 쪽이 무엇인지 반드시 써 줘야 한다. */
+.monitor-section {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-secondary;
+    -fx-padding: 10px 14px 6px 14px;
+}
+
+.monitor-status-bar {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: -edge-line transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+    -fx-padding: 6px 14px;
+}
+
+/* ── 준비 큐 ── */
+/*
+ * MLFQ 는 큐가 셋, 나머지 스케줄러는 하나다. 개수가 달라지므로 FlowPane 에
+ * 얹어 넘치면 다음 줄로 흘리게 둔다. 비어 있는 큐도 감추지 않는다 —
+ * "Q2 가 비어 있다"는 것 자체가 MLFQ 를 이해하는 데 필요한 정보다.
+ */
+
+.queue-strip {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: -edge-line transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+    -fx-padding: 9px 14px;
+    -fx-hgap: 8px;
+    -fx-vgap: 6px;
+}
+
+.queue-chip {
+    -fx-background-color: -fill-soft;
+    -fx-background-radius: 6px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 6px;
+    -fx-padding: 4px 10px;
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-dim;
+}
+
+/* 프로세스가 들어 있는 큐만 살아난다. 눈이 먼저 가야 할 곳이 거기다. */
+.queue-chip:on {
+    -fx-background-color: -accent-tint;
+    -fx-border-color: -accent-border;
+    -fx-text-fill: -accent-text;
 }
 
 /* ─────────────────────────── Finder ─────────────────────────── */
@@ -6001,11 +7813,153 @@ module forgeos {
     -fx-text-fill: -danger-text;
     -fx-font-weight: bold;
 }
+
+/* ─────────────────────────── 메모장 ─────────────────────────── */
+
+.notepad {
+    -fx-background-color: transparent;
+}
+
+.notepad-sidebar {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: transparent -edge-line transparent transparent;
+    -fx-border-width: 0 1px 0 0;
+    -fx-pref-width: 220px;
+    -fx-spacing: 0;
+}
+
+.notepad-path {
+    -fx-font-size: 11.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-secondary;
+    -fx-padding: 12px 14px 4px 14px;
+}
+
+.notepad-sidebar-header {
+    -fx-spacing: 6px;
+    -fx-padding: 4px 12px 10px 12px;
+}
+
+.notepad-file-list {
+    -fx-background-color: transparent;
+}
+
+.notepad-main {
+    -fx-background-color: transparent;
+}
+
+/*
+ * 편집기만 고정폭 글꼴이다. 커널 파일 시스템에 들어가는 것은 대부분 설정·로그·
+ * 짧은 메모라, 비례 글꼴보다 자릿수가 맞는 편이 읽기 쉽다.
+ */
+.notepad-editor {
+    -fx-font-family: "SF Mono", "JetBrains Mono", "D2Coding", "Menlo", monospace;
+    -fx-font-size: 13px;
+}
+
+.notepad-editor .content {
+    -fx-background-color: -fill-sunken;
+}
+
+.notepad-open-file {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -text-dim;
+}
+
+.notepad-status-bar {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: -edge-line transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+    -fx-padding: 6px 14px;
+    -fx-spacing: 12px;
+}
+
+.notepad-status {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-dim;
+}
+
+.notepad-count {
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-dim;
+}
+
+/* 저장되지 않은 변경이 있는 파일. 크기 대신 점이 뜬다. */
+.entry-size:on {
+    -fx-text-fill: -molten-gold;
+    -fx-font-weight: bold;
+}
+
+/* ─────────────────────────── Firefox ─────────────────────────── */
+/*
+ * 브라우저의 내용물은 우리 스타일시트가 닿지 않는 남의 문서다. 그래서 여기서
+ * 칠할 수 있는 것은 크롬(도구 모음·탭·주소창)뿐이고, 그 크롬은 최대한 얇아야
+ * 한다 — 페이지가 주인공인 앱에서 크롬이 두꺼우면 창이 작아 보인다.
+ */
+
+.browser {
+    -fx-background-color: transparent;
+}
+
+.browser-toolbar {
+    -fx-spacing: 4px;
+    -fx-padding: 7px 10px;
+}
+
+.browser-nav {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 5px 8px;
+    -fx-cursor: hand;
+}
+
+.browser-nav:hover {
+    -fx-background-color: -fill-medium;
+}
+
+.browser-nav:disabled {
+    -fx-opacity: 0.3;
+}
+
+.browser-address-box {
+    -fx-background-color: -fill-sunken;
+    -fx-background-radius: 9px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 9px;
+    -fx-padding: 0 10px;
+    -fx-spacing: 6px;
+}
+
+/* 주소창은 상자 안의 상자다. 자기 배경과 테두리를 지워야 한 겹으로 보인다. */
+.browser-address {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-pref-width: 100;
+    -fx-padding: 7px 2px;
+    -fx-font-size: 12.5px;
+}
+
+.browser-address:focused {
+    -fx-border-color: transparent;
+}
+
+.browser-lock {
+    -fx-stroke: -accent-text;
+    -fx-stroke-width: 1.7;
+}
+
+.browser-tabs {
+    -fx-background-color: transparent;
+}
+
+.browser-progress > .bar {
+    -fx-background-color: -forge-ember;
+}
 ```
 
 ---
 
-# 37. theme.css
+# 43. theme.css
 
 **Path**
 `src/main/resources/forgeos/css/theme.css`
@@ -6347,10 +8301,7 @@ module forgeos {
     -fx-border-color: -edge-light;
     -fx-border-radius: 22px;
     -fx-border-width: 1px;
-    /*
-     * 아이콘 사이 간격. 좁으면 하나를 겨냥하다 옆을 누르게 되고, 확대 효과도
-     * 이웃과 겹쳐 뭉개진다. 간격을 바꾸면 DockView.SPREAD 도 같이 키워야 한다.
-     */
+    /* 아이콘 사이 간격. 좁으면 하나를 겨냥하다 옆을 누르게 된다. */
     -fx-padding: 10px 18px;
     -fx-spacing: 20px;
     -fx-alignment: bottom-center;
@@ -6396,6 +8347,21 @@ module forgeos {
 
 .dock-running-dot {
     -fx-fill: -electric-cyan;
+}
+
+/*
+ * 가리킨 앱의 이름표. Dock 바깥(위)에 떠서 바탕화면이나 창 위에 얹히므로,
+ * 가장 불투명한 유리와 또렷한 그림자를 써야 어떤 배경에서도 읽힌다.
+ */
+.dock-name {
+    -fx-background-color: -glass-thick;
+    -fx-background-radius: 8px;
+    -fx-border-color: -edge-line;
+    -fx-border-radius: 8px;
+    -fx-text-fill: -text-primary;
+    -fx-font-size: 12px;
+    -fx-padding: 4px 11px;
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 18, 0, 0, 6);
 }
 
 /* ─────────────────────────── 창 ─────────────────────────── */
@@ -6739,6 +8705,114 @@ module forgeos {
 
 /* ── 툴팁 ── */
 
+/* ── 탭 ── */
+/*
+ * 탭은 창을 더 만들지 않고 화면을 나누는 유일한 수단이다. 활성 상태 보기의
+ * 프로세스/메모리, 브라우저의 페이지들이 모두 여기 얹힌다. macOS 의 탭이
+ * 그렇듯 선택된 탭만 밝고, 나머지는 배경으로 물러난다.
+ */
+
+.tab-pane > .tab-header-area {
+    -fx-padding: 0;
+}
+
+.tab-pane > .tab-header-area > .tab-header-background {
+    -fx-background-color: -fill-subtle;
+    -fx-border-color: transparent transparent -edge-line transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-padding: 7px 16px;
+    -fx-cursor: hand;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:hover {
+    -fx-background-color: -fill-soft;
+}
+
+/* 선택된 탭은 배경이 아니라 밑줄로 표시한다. 배경을 칠하면 탭 줄이
+   두 겹으로 보이고, 창 제목 표시줄과 색이 겹쳐 어디까지가 창인지 흐려진다. */
+.tab-pane > .tab-header-area > .headers-region > .tab:selected {
+    -fx-background-color: -fill-medium;
+    -fx-border-color: transparent transparent -electric-cyan transparent;
+    -fx-border-width: 0 0 2px 0;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab .tab-label {
+    -fx-text-fill: -text-secondary;
+    -fx-font-size: 12px;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:selected .tab-label {
+    -fx-text-fill: -text-primary;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab .tab-close-button {
+    -fx-background-color: -text-dim;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:hover .tab-close-button {
+    -fx-background-color: -text-primary;
+}
+
+/* JavaFX 는 선택된 탭에 점선 초점 테두리를 그린다. 우리 디자인에는 없는 물건이다. */
+.tab-pane > .tab-header-area > .headers-region > .tab:selected .focus-indicator {
+    -fx-border-color: transparent;
+}
+
+.tab-pane > .tab-content-area {
+    -fx-background-color: transparent;
+}
+
+/* ── 여러 줄 입력 ── */
+
+.text-area {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-text-fill: -text-primary;
+    -fx-prompt-text-fill: -text-dim;
+    -fx-highlight-fill: -accent-tint-strong;
+    -fx-padding: 0;
+}
+
+.text-area > .scroll-pane {
+    -fx-background-color: transparent;
+}
+
+.text-area .content {
+    -fx-background-color: transparent;
+    -fx-padding: 14px 16px;
+}
+
+/* ── 진행 막대 ── */
+/*
+ * 브라우저의 로딩 표시. 두께 3px 에 트랙이 없다 — 진행 중일 때만 나타나고
+ * 끝나면 자리째 사라지므로, 비어 있는 트랙을 보여 줄 이유가 없다.
+ */
+
+.progress-bar {
+    -fx-pref-height: 3px;
+    -fx-min-height: 3px;
+    -fx-max-height: 3px;
+    -fx-padding: 0;
+}
+
+.progress-bar > .track {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+}
+
+.progress-bar > .bar {
+    -fx-background-color: -electric-cyan;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
 .tooltip {
     -fx-background-color: -glass-thick;
     -fx-background-radius: 7px;
@@ -6824,7 +8898,7 @@ module forgeos {
 
 ---
 
-# 38. tokens-dark.css
+# 44. tokens-dark.css
 
 **Path**
 `src/main/resources/forgeos/css/tokens-dark.css`
@@ -6851,6 +8925,9 @@ module forgeos {
     -forge-ember:        #ff6b4a;
     -molten-gold:        #ffb627;
     -electric-cyan:      #22d3ee;
+    /* 로고의 불꽃에서 튀는 보라 불티. 1.1.0 에서 게이지가 넷이 되며 이름을 얻었다 —
+       프레임(Ember)·힙(Gold)·TLB(Cyan) 옆에서 스왑이 자기 색을 가져야 했다. */
+    -forge-violet:       #d946ef;
 
     /* ── 바탕 ── */
     -forge-bg:           #06080b;
@@ -6969,7 +9046,7 @@ module forgeos {
 
 ---
 
-# 39. tokens-light.css
+# 45. tokens-light.css
 
 **Path**
 `src/main/resources/forgeos/css/tokens-light.css`
@@ -6992,6 +9069,9 @@ module forgeos {
     -forge-ember:        #ff6b4a;
     -molten-gold:        #ffb627;
     -electric-cyan:      #22d3ee;
+    /* 로고의 불꽃에서 튀는 보라 불티. 1.1.0 에서 게이지가 넷이 되며 이름을 얻었다 —
+       프레임(Ember)·힙(Gold)·TLB(Cyan) 옆에서 스왑이 자기 색을 가져야 했다. */
+    -forge-violet:       #d946ef;
 
     /* ── 바탕 ── */
     -forge-bg:           #eef1f6;
