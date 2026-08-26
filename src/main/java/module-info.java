@@ -19,9 +19,10 @@ module forgeos {
     requires javafx.media;
 
     /**
-     * Firefox 앱의 렌더링 엔진(WebView). JavaFX 가 품는 엔진은 Gecko 가 아니라
-     * WebKit 이므로 "Firefox 를 띄운다"가 아니라 "Firefox 를 닮은 브라우저를
-     * ForgeOS 안에서 돌린다"가 정확한 표현이다.
+     * ForgeWeb 앱의 렌더링 엔진(WebView). JavaFX 가 품는 엔진은 Gecko 도 Blink 도
+     * 아닌 <b>WebKit</b> 하나뿐이다. 1.1.0 에서 이 앱의 이름이 {@code Firefox} 였던
+     * 것을 1.1.1 에서 ForgeWeb 으로 바꾼 이유가 여기 있다 — 엔진이 그 엔진이 아닌데
+     * 이름만 빌리면, 그 사실을 매번 각주로 달아야 한다.
      */
     requires javafx.web;
 

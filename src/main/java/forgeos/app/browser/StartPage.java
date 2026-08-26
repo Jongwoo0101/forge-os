@@ -34,7 +34,7 @@ final class StartPage {
                 <html lang="ko">
                 <head>
                 <meta charset="utf-8">
-                <title>Firefox — ForgeOS</title>
+                <title>ForgeWeb — ForgeOS</title>
                 <style>
                   * { box-sizing: border-box; }
                   body {
@@ -74,14 +74,14 @@ final class StartPage {
                 </style>
                 </head>
                 <body>
-                  <div class="mark">Fire<span>fox</span></div>
+                  <div class="mark">Forge<span>Web</span></div>
                   <div class="sub">ForgeOS 기본 브라우저 · WebKit 렌더링</div>
                   <form action="https://duckduckgo.com/" method="get">
                     <input name="q" autofocus placeholder="검색하거나 주소를 입력하세요">
                   </form>
                   <div class="tiles">
-                    <a class="tile" href="https://www.mozilla.org/ko/firefox/">
-                      <b>Mozilla</b><em>mozilla.org</em></a>
+                    <a class="tile" href="https://www.w3.org/">
+                      <b>W3C</b><em>w3.org</em></a>
                     <a class="tile" href="https://developer.mozilla.org/ko/">
                       <b>MDN Web Docs</b><em>developer.mozilla.org</em></a>
                     <a class="tile" href="https://openjfx.io/">
