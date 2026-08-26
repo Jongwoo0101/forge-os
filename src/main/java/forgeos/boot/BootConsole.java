@@ -27,11 +27,18 @@ import java.util.Deque;
  */
 final class BootConsole extends StackPane {
 
-    /** 글자 하나가 찍히는 간격(초). 너무 빠르면 로그가 아니라 깜빡임으로 보인다. */
-    private static final double CHAR_INTERVAL = 0.0065;
+    /**
+     * 글자 하나가 찍히는 간격(초). 너무 빠르면 로그가 아니라 깜빡임으로 보인다.
+     *
+     * <p><b>1.1.1</b> — 6.5ms에서 2.2ms로 줄였다. 부팅 로그는 열댓 줄, 800자
+     * 안팎이라 이 값 하나가 부팅 시간의 절반 가까이를 정한다. 2.2ms 는 여전히
+     * "찍히는" 것이 보이는 속도다 — 사람 눈이 글자가 늘어나는 것을 따라갈 수 있는
+     * 한계는 대략 이 근처이고, 그보다 느린 것은 리듬이 아니라 기다림이다.</p>
+     */
+    private static final double CHAR_INTERVAL = 0.0022;
 
     /** 줄이 끝난 뒤의 숨. 사람이 한 줄을 읽었다고 느끼는 최소 간격이다. */
-    private static final double LINE_PAUSE = 0.055;
+    private static final double LINE_PAUSE = 0.018;
 
     private final VBox lines = new VBox();
     private final ScrollPane scroller = new ScrollPane();
@@ -145,11 +152,24 @@ final class BootConsole extends StackPane {
         }
     }
 
+    /**
+     * 한 프레임 분량을 찍는다.
+     *
+     * <p><b>1.1.1</b> — 글자마다 {@code setText} 를 부르지 않는다. 한 프레임에
+     * 여러 글자가 찍히는데(2.2ms 간격이면 60fps 에서 일고여덟 자), 어차피 화면에
+     * 그려지는 것은 마지막 상태 하나뿐이다. 그런데도 글자마다 텍스트를 갈면 그
+     * 횟수만큼 라벨의 크기 계산과 부모 VBox 의 배치 무효화가 일어난다. 중간 상태는
+     * 아무도 보지 못하는데 값은 온전히 치르는 셈이었다. 이제 프레임 끝에 한 번만
+     * 반영한다.</p>
+     */
     private void pump() {
+        boolean touched = false;
+
         while (accumulator >= CHAR_INTERVAL) {
             if (currentLine == null) {
                 if (pending.isEmpty()) {
                     accumulator = 0;
+                    flushTypedText(touched);
                     if (drainRequested) {
                         fireDrained();
                     }
@@ -163,14 +183,24 @@ final class BootConsole extends StackPane {
             if (typedChars >= currentText.length()) {
                 accumulator -= LINE_PAUSE;
                 commitCurrentLine();
+                touched = false;
                 continue;
             }
 
             typedChars++;
-            currentLine.setText(currentText.substring(0, typedChars));
+            touched = true;
             accumulator -= CHAR_INTERVAL;
         }
+
+        flushTypedText(touched);
         scroller.setVvalue(1);
+    }
+
+    /** 이번 프레임에 늘어난 글자를 한 번에 반영한다. */
+    private void flushTypedText(boolean touched) {
+        if (touched && currentLine != null) {
+            currentLine.setText(currentText.substring(0, typedChars));
+        }
     }
 
     private void commitCurrentLine() {

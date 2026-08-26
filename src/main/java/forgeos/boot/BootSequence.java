@@ -36,17 +36,29 @@ public final class BootSequence extends StackPane {
     /** 부팅 애니메이션 리소스 경로. */
     private static final String VIDEO_RESOURCE = "/assets/forgeOS-Booting-Animation2.mp4";
 
-    /** 부팅 콘솔이 화면에 머무는 최소 시간(ms). */
-    private static final long MIN_CONSOLE_MILLIS = 1200;
+    /**
+     * 부팅 콘솔이 화면에 머무는 최소 시간(ms).
+     *
+     * <p><b>1.1.1</b> — 1200에서 500으로 줄였다. 이 값은 "깜빡임처럼 보이지 않을
+     * 만큼"을 위한 하한이지 연출 시간이 아니다. 실제 체류 시간은 로그가 다 찍히는
+     * 데 걸리는 시간이 정하며, 그쪽이 언제나 이 값보다 길다.</p>
+     */
+    private static final long MIN_CONSOLE_MILLIS = 500;
 
     /**
      * 부팅 단계 사이의 지연(ms).
      *
-     * <p>커널 기본값(150ms)보다 길게 잡았다. 커널 입장에서는 의미 없는 대기지만
-     * 부팅 화면 입장에서는 이것이 곧 리듬이다 — 로그가 한 줄씩 "찍히는" 것처럼
-     * 보이려면 줄과 줄 사이에 사람이 인지할 만한 간격이 있어야 한다.</p>
+     * <p>커널 입장에서는 의미 없는 대기지만 부팅 화면 입장에서는 이것이 곧
+     * 리듬이다 — 로그가 한 줄씩 "찍히는" 것처럼 보이려면 줄과 줄 사이에 사람이
+     * 인지할 만한 간격이 있어야 한다.</p>
+     *
+     * <p><b>1.1.1</b> — 260에서 80으로 줄였다. 단계가 다섯이므로 이 값 하나가
+     * 부팅 전체에 1초 가까이를 더하고 있었는데, 정작 그 1초 동안 화면에서는
+     * <b>아무 일도 일어나지 않는다</b> — 타이핑은 이미 큐에 쌓인 줄을 처리하느라
+     * 바쁘기 때문이다. 리듬은 콘솔의 타이핑 간격이 만들고, 커널의 대기는
+     * 그 리듬을 만들지 않으면서 시간만 먹고 있었다.</p>
      */
-    private static final long BOOT_STAGE_DELAY_MILLIS = 260;
+    private static final long BOOT_STAGE_DELAY_MILLIS = 80;
 
     private final KernelService kernelService;
     private final Runnable onDesktopReady;
@@ -90,6 +102,11 @@ public final class BootSequence extends StackPane {
     public void start() {
         consoleShownAt = System.currentTimeMillis();
         printBanner();
+
+        // 2단계 준비를 지금 시작한다. 리소스를 임시 파일로 풀고 디코더를 세우는 일은
+        // 콘솔이 로그를 찍는 동안 백그라운드에서 끝나 있어야 한다 — 전환 순간에 하면
+        // 그 몫이 그대로 화면이 굳는 시간이 된다.
+        video.prepare(VIDEO_RESOURCE);
 
         ForgeConfig config = ForgeConfig.defaults()
                 .withBootStageDelayMillis(BOOT_STAGE_DELAY_MILLIS);
