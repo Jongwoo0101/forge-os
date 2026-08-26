@@ -191,7 +191,7 @@
     -fx-fill: linear-gradient(from 0% 100% to 100% 0%,
         #ff2a00 0%, #ff7700 50%, #ffc400 90%, #fff5d6 100%);
     -fx-stroke: null;
-    -fx-effect: dropshadow(gaussian, rgba(255, 106, 0, 0.85), 64, 0.35, 0, 0);
+    -fx-effect: dropshadow(gaussian, rgba(255, 106, 0, 0.85), 40, 0.45, 0, 0);
 }
 
 .mark-flame-core {
@@ -233,7 +233,7 @@
     -fx-alignment: center-left;
     -fx-min-height: 30px;
     -fx-pref-height: 30px;
-    -fx-effect: dropshadow(gaussian, -shadow-menu, 18, 0, 0, 4);
+    -fx-effect: dropshadow(gaussian, -shadow-menu, 12, 0, 0, 3);
 }
 
 .menu-logo {
@@ -308,7 +308,7 @@
     -fx-border-color: -edge-line;
     -fx-border-radius: 10px;
     -fx-padding: 5px;
-    -fx-effect: dropshadow(gaussian, -shadow-popup, 26, 0, 0, 10);
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 18, 0, 0, 7);
 }
 
 .menu-item {
@@ -339,7 +339,7 @@
     -fx-spacing: 20px;
     -fx-alignment: bottom-center;
     /* 큰 표면일수록 그림자가 깊어야 유리처럼 떠 보인다. */
-    -fx-effect: dropshadow(gaussian, -shadow-dock, 42, 0, 0, 14);
+    -fx-effect: dropshadow(gaussian, -shadow-dock, 24, 0, 0, 9);
 }
 
 .dock-item {
@@ -394,7 +394,7 @@
     -fx-text-fill: -text-primary;
     -fx-font-size: 12px;
     -fx-padding: 4px 11px;
-    -fx-effect: dropshadow(gaussian, -shadow-popup, 18, 0, 0, 6);
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 12, 0, 0, 4);
 }
 
 /* ─────────────────────────── 창 ─────────────────────────── */
@@ -410,12 +410,12 @@
     -fx-border-radius: 12px;
     -fx-border-width: 1px;
     /* 비활성 창의 그림자는 얕다. 깊이가 곧 "지금 이것을 보고 있다"는 신호다. */
-    -fx-effect: dropshadow(gaussian, -shadow-window, 26, 0, 0, 10);
+    -fx-effect: dropshadow(gaussian, -shadow-window, 16, 0, 0, 7);
 }
 
 .forge-window:active {
     -fx-border-color: -edge-strong;
-    -fx-effect: dropshadow(gaussian, -shadow-window-active, 54, 0, 0, 22);
+    -fx-effect: dropshadow(gaussian, -shadow-window-active, 30, 0, 0, 14);
 }
 
 .window-titlebar {
@@ -733,7 +733,7 @@
     -fx-background-radius: 9px;
     -fx-border-color: -edge-line;
     -fx-border-radius: 9px;
-    -fx-effect: dropshadow(gaussian, -shadow-popup, 24, 0, 0, 8);
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 16, 0, 0, 6);
 }
 
 /* ── 툴팁 ── */
@@ -854,7 +854,7 @@
     -fx-text-fill: -text-primary;
     -fx-font-size: 11.5px;
     -fx-padding: 5px 9px;
-    -fx-effect: dropshadow(gaussian, -shadow-popup, 16, 0, 0, 5);
+    -fx-effect: dropshadow(gaussian, -shadow-popup, 11, 0, 0, 4);
 }
 
 /* ── 토글 스위치 ── */
@@ -897,7 +897,7 @@
     -fx-border-color: -edge-line;
     -fx-border-radius: 16px;
     -fx-padding: 32px 36px;
-    -fx-effect: dropshadow(gaussian, -shadow-window-active, 40, 0, 0, 16);
+    -fx-effect: dropshadow(gaussian, -shadow-window-active, 24, 0, 0, 10);
 }
 
 .shutdown-title {

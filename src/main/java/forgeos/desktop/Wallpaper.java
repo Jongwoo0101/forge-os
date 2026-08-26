@@ -33,6 +33,16 @@ import javafx.scene.shape.Rectangle;
  * 짧은 변에 비례해 배율을 정하되 위아래로 잘라, 어떤 창 크기에서도 비슷한 비중으로
  * 보이게 한다.</p>
  *
+ * <h2>1.1.1 — 배경화면은 한 번만 굽는다</h2>
+ * <p>마크에는 가우시안 흐림 둘과 반경 40px 짜리 발광 그림자가 걸려 있다. 이것들은
+ * <b>그리는 값이 아니라 굽는 값</b>이라, 캐시가 없으면 위를 지나가는 창이 만든
+ * 더러운 영역마다 다시 계산된다. 창을 끌 때 배경이 조용히 CPU를 먹고 있던 이유가
+ * 이것이다.</p>
+ *
+ * <p>마크와 동심원은 창 크기가 바뀔 때 말고는 변하지 않으므로 비트맵으로 굳혀 둔다.
+ * {@code CacheHint.DEFAULT} 라서 배율이 실제로 달라지는 순간에만 다시 굽는다 —
+ * 화질을 잃지 않으면서 매 프레임의 흐림 계산만 없앤다.</p>
+ *
  * <h2>정중앙</h2>
  * <p>마크·동심원·워드마크는 모두 데스크탑의 정중앙에 놓인다. 한때 창이 화면
  * 가운데에 열린다는 이유로 왼쪽 위로 비켜 앉혔지만, 창이 하나도 없을 때 화면이
@@ -72,6 +82,7 @@ final class Wallpaper extends StackPane {
         rings = new StackPane(ring(RING_INNER), ring(RING_OUTER));
         rings.setMinSize(0, 0);
         rings.setPrefSize(0, 0);
+        rings.setCache(true);
 
         Label wordmark = new Label("G R A P H I C A L   O S");
         // JavaFX CSS 에는 letter-spacing 이 없다. 원본 SVG 의 넓은 자간을 흉내 내려면
@@ -82,6 +93,8 @@ final class Wallpaper extends StackPane {
         brand.getStyleClass().add("wallpaper-brand");
         brand.setMinSize(0, 0);
         brand.setPrefSize(0, 0);
+        // 흐림·발광을 프레임마다 다시 굽지 않는다. 위 주석 참고.
+        brand.setCache(true);
 
         getChildren().addAll(glow, rings, brand);
 

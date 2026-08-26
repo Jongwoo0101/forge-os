@@ -54,8 +54,8 @@ public final class ForgeMark extends Group {
 
         if (withAtmosphere) {
             content.getChildren().addAll(
-                    glow(256, 245, 130, "mark-glow-ember", 54),
-                    glow(256, 245, 70, "mark-glow-violet", 42));
+                    glow(256, 245, 130, "mark-glow-ember", 34),
+                    glow(256, 245, 70, "mark-glow-violet", 26));
         }
 
         content.getChildren().addAll(
@@ -108,6 +108,11 @@ public final class ForgeMark extends Group {
     /**
      * 발광 원반. 흐림 반경은 CSS로 표현할 수 없어서
      * ({@code -fx-effect}는 그림자 계열만 지원한다) 여기서 직접 건다.
+     *
+     * <p><b>1.1.1</b> — 반경을 34/26으로 낮췄다. 가우시안 흐림의 비용은 반경에
+     * 비례해서 커지는데, 원반이 이미 반투명한 색이라 반경을 더 키워도 눈에 보이는
+     * 것은 거의 달라지지 않았다. 배경화면은 비트맵으로 캐시되지만, 창 크기를 바꿀
+     * 때마다 다시 굽는 값이므로 싼 편이 낫다.</p>
      */
     private static Circle glow(double x, double y, double radius, String styleClass, double blur) {
         Circle circle = dot(x, y, radius, styleClass);
