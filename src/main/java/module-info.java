@@ -15,8 +15,10 @@ module forgeos {
     requires javafx.controls;
     requires javafx.graphics;
 
-    /** 부팅 애니메이션(MP4) 재생용. 이 모듈이 빠지면 시네마틱 부팅 2단계가 통째로 사라진다. */
-    requires javafx.media;
+    // javafx.media 는 1.1.1 에서 걷어냈다. 부팅 2단계가 MP4 재생에서 벡터 스플래시
+    // (forgeos.boot.BootSplash)로 바뀌면서 MediaView 를 쓰는 곳이 하나도 남지 않았다.
+    // 영상을 되살리려면 여기 requires 를 다시 넣고, build.gradle.kts 의 javafx.modules
+    // 에도 "javafx.media" 를 되돌려야 한다.
 
     /**
      * ForgeWeb 앱의 렌더링 엔진(WebView). JavaFX 가 품는 엔진은 Gecko 도 Blink 도

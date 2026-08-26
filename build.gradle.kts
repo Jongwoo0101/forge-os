@@ -48,14 +48,17 @@ dependencies {
 // ── JavaFX ─────────────────────────────────────────────────────────
 //
 // 플러그인이 현재 플랫폼(mac-aarch64 / win / linux)에 맞는 classifier 를 알아서
-// 붙이고, 모듈 경로 구성까지 처리한다. media 는 부팅 애니메이션(MP4) 재생에
-// 반드시 필요하다 — 빼면 MediaView 가 통째로 사라진다.
+// 붙이고, 모듈 경로 구성까지 처리한다.
+//
+// 1.1.1 에서 media 가 빠졌다. 부팅 2단계가 MP4 재생에서 벡터 스플래시로 바뀌면서
+// MediaView 를 쓰는 곳이 하나도 남지 않았다. 영상을 되살리려면 여기와
+// module-info.java 양쪽에 되돌려야 한다.
 // web 은 ForgeWeb 앱(WebView)이 쓴다. 이 모듈만 유일하게 무게가 다르다 —
 // WebKit 네이티브 라이브러리가 통째로 딸려 와서 배포 크기가 100MB 가까이 늘어난다.
 // 그럼에도 넣은 이유는, 브라우저 없이 "데스크탑 환경"이라고 부르기 어렵기 때문이다.
 javafx {
     version = property("javafxVersion") as String
-    modules = listOf("javafx.controls", "javafx.graphics", "javafx.media", "javafx.web")
+    modules = listOf("javafx.controls", "javafx.graphics", "javafx.web")
 }
 
 tasks.withType<JavaCompile>().configureEach {

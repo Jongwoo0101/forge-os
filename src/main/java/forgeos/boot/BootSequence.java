@@ -12,7 +12,13 @@ import javafx.scene.layout.StackPane;
 import javafx.util.Duration;
 
 /**
- * 시네마틱 부팅 시퀀스 — 터미널 로그 → MP4 애니메이션 → 데스크탑.
+ * 시네마틱 부팅 시퀀스 — 터미널 로그 → 로고 스플래시 → 데스크탑.
+ *
+ * <h2>1.1.1 — 2단계를 다시 만들었다</h2>
+ * <p>2단계는 10초짜리 MP4였다. 영상을 걷어내고 {@link BootSplash} 로 바꿨다 —
+ * 배경화면이 쓰는 것과 같은 벡터 로고, 그 아래에서 시계 방향으로 도는 스피너,
+ * 이 구간에 실제로 일어나는 일을 적은 상태 문구. 리소스도 디코더도 필요 없으므로
+ * 준비 시간이 0이고, 길이는 상수 하나로 정해진다.</p>
  *
  * <h2>타이밍을 무엇에 맞추는가</h2>
  * <p>세 단계를 고정된 초로 이어 붙이면 반드시 어긋난다. 커널 부팅은 기계마다
@@ -20,7 +26,7 @@ import javafx.util.Duration;
  * 그래서 이 클래스는 <b>시간이 아니라 사건</b>으로 넘어간다.</p>
  * <ol>
  *   <li>1 → 2: 커널 부팅 완료 <b>그리고</b> 타이핑 큐 소진. 둘 다 만족해야 넘어간다.</li>
- *   <li>2 → 3: {@code MediaPlayer}의 재생 종료 이벤트(또는 실패).</li>
+ *   <li>2 → 3: 스플래시가 제 연출을 끝냈을 때.</li>
  * </ol>
  * <p>단 하나 시간으로 강제하는 것이 {@link #MIN_CONSOLE_MILLIS}다. 빠른 기계에서
  * 부팅 로그가 0.3초 만에 끝나면 화면이 깜빡인 것처럼 보인다. 최소한 이만큼은
@@ -28,13 +34,10 @@ import javafx.util.Duration;
  *
  * <h2>건너뛰기</h2>
  * <p>ESC 또는 클릭으로 언제든 데스크탑으로 넘어갈 수 있다. 개발 중에 부팅
- * 영상을 200번 보는 것은 누구에게도 도움이 되지 않는다. 다만 커널 부팅 자체는
+ * 연출을 200번 보는 것은 누구에게도 도움이 되지 않는다. 다만 커널 부팅 자체는
  * 건너뛸 수 없으므로, 부팅이 끝나기 전에 건너뛰면 완료를 기다렸다가 전환한다.</p>
  */
 public final class BootSequence extends StackPane {
-
-    /** 부팅 애니메이션 리소스 경로. */
-    private static final String VIDEO_RESOURCE = "/assets/forgeOS-Booting-Animation2.mp4";
 
     /**
      * 부팅 콘솔이 화면에 머무는 최소 시간(ms).
@@ -64,7 +67,7 @@ public final class BootSequence extends StackPane {
     private final Runnable onDesktopReady;
 
     private final BootConsole console = new BootConsole();
-    private final BootVideo video = new BootVideo();
+    private final BootSplash splash = new BootSplash();
 
     private long consoleShownAt;
     private boolean kernelReady;
@@ -85,9 +88,10 @@ public final class BootSequence extends StackPane {
         this.onDesktopReady = onDesktopReady;
 
         getStyleClass().add("boot-root");
-        video.setVisible(false);
-        video.setOpacity(0);
-        getChildren().addAll(video, console);
+        // 스플래시는 콘솔 아래에 깔린다. 콘솔이 검은 배경째 흐려지면서 그 자리에서
+        // 로고가 떠오르는 교차 전환이 되도록, 겹쳐 두고 순서만 정해 둔다.
+        splash.setVisible(false);
+        getChildren().addAll(splash, console);
 
         setOnMouseClicked(e -> skip());
         setFocusTraversable(true);
@@ -102,11 +106,6 @@ public final class BootSequence extends StackPane {
     public void start() {
         consoleShownAt = System.currentTimeMillis();
         printBanner();
-
-        // 2단계 준비를 지금 시작한다. 리소스를 임시 파일로 풀고 디코더를 세우는 일은
-        // 콘솔이 로그를 찍는 동안 백그라운드에서 끝나 있어야 한다 — 전환 순간에 하면
-        // 그 몫이 그대로 화면이 굳는 시간이 된다.
-        video.prepare(VIDEO_RESOURCE);
 
         ForgeConfig config = ForgeConfig.defaults()
                 .withBootStageDelayMillis(BOOT_STAGE_DELAY_MILLIS);
@@ -158,7 +157,7 @@ public final class BootSequence extends StackPane {
         }
         console.whenDrained(() -> {
             consoleDrained = true;
-            advanceToVideo();
+            advanceToSplash();
         });
     }
 
@@ -167,7 +166,15 @@ public final class BootSequence extends StackPane {
         console.println("[FATAL] ForgeOS를 시작할 수 없습니다.");
     }
 
-    private void advanceToVideo() {
+    /**
+     * 2단계로 넘어간다.
+     *
+     * <p>콘솔의 페이드 아웃과 스플래시의 등장을 <b>동시에</b> 돌린다. 1.1.0 처럼
+     * 콘솔이 완전히 사라진 <i>뒤에</i> 다음 장면을 시작하면 두 시간이 더해지고,
+     * 그 0.4초 동안 화면에는 검은색밖에 없다. 둘 다 검은 배경 위에 있으므로 겹쳐
+     * 두면 글자가 흐려지는 자리에서 로고가 떠오르는 <b>한 장면</b>이 된다.</p>
+     */
+    private void advanceToSplash() {
         if (advanced || !kernelReady || !consoleDrained) {
             return;
         }
@@ -179,11 +186,8 @@ public final class BootSequence extends StackPane {
             return;
         }
 
-        Motion.fadeOut(console, Motion.FADE_SCENE, () -> {
-            video.setOpacity(0);
-            video.play(VIDEO_RESOURCE, this::finish);
-            Motion.fadeIn(video, Motion.FADE, null);
-        });
+        splash.play(this::finish);
+        Motion.fadeOut(console, Motion.FADE_SCENE, null);
     }
 
     private void finish() {
@@ -191,7 +195,7 @@ public final class BootSequence extends StackPane {
             return;
         }
         finished = true;
-        video.dispose();
+        splash.dispose();
         onDesktopReady.run();
     }
 
@@ -209,8 +213,7 @@ public final class BootSequence extends StackPane {
             return;
         }
         if (advanced) {
-            video.dispose();
-            finish();
+            splash.skip();
             return;
         }
         console.flush();

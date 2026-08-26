@@ -176,20 +176,36 @@ line `EventLogger` emits is piped straight to the screen.
 ...
 ```
 
-### Stage 2 — MP4 boot animation
+### Stage 2 — logo splash (2.4s)
 
-The text fades out and `src/main/resources/assets/forgeOS-Booting-Animation2.mp4` plays
-full-screen through a `MediaView`.
+> **Rebuilt in 1.1.1.** This used to be a 10-second MP4. It is now nothing but shapes — no
+> resource, no decoder, and no `javafx.media` module.
+
+The logo rises *in the same place* the console is fading from. The two scenes overlap rather
+than queue, so there is never a moment of plain black.
+
+| Element | Motion |
+|---|---|
+| **Halo** | Two dotted circles (r=268 · 188) turning clockwise at 11° and 17° per second. Same place and same character as the desktop wallpaper's rings, so the two screens read as one world |
+| **Logo** | `ForgeMark` — literally the same vector the wallpaper draws. Scales up and brightens over 0.55s |
+| **Spinner** | 210°/s clockwise, with the arc length breathing between 34° and 292° on a 1.5s cycle. A ring turning at a constant length is a clock; a breathing one is a loader |
+| **Inner arc** | 335°/s, thin cyan. One ring alone looks like a clock; two at different speeds look like a machine |
+| **Ember** | Rides the head of the arc — the only mark that says how far around it has come |
+| **Status** | 0.3s "kernel ready" → 1.0s "initialising graphics layer" → 1.6s "composing desktop" |
+
+In the last 0.5s the arc **closes into a full circle** while everything scales up slightly.
+A loader that fizzles out reads as an interruption; one that completes reads as a result —
+and the desktop that follows is that result.
 
 ### Stage 3 — desktop
 
-When playback ends (`setOnEndOfMedia`) the screen cross-fades into the desktop: wallpaper,
+When the splash finishes its performance the screen cross-fades into the desktop: wallpaper,
 top menu bar, bottom Dock.
 
 > **Stages are joined by events, not by time.** Stitching them together with fixed durations
 > is guaranteed to drift — kernel boot time varies by machine and typing time varies with log
-> length. Stage 1 → 2 fires when *the kernel has booted **and** the typing queue has drained*;
-> stage 2 → 3 fires on the *end-of-media event*.
+> length. Stage 1 → 2 fires when *the kernel has booted **and** the typing queue has drained*.
+> Only 2 → 3 is on a timer, because the splash has no event to wait for.
 
 `ESC`, `Space` or a click skips the presentation. Kernel boot itself cannot be skipped, so
 pressing early simply jumps to the desktop the moment boot completes.
@@ -632,7 +648,7 @@ forge-os/
     │       ├── boot/
     │       │   ├── BootSequence.java    # three-stage orchestration
     │       │   ├── BootConsole.java     # typewriter (arrival and output separated by a queue)
-    │       │   └── BootVideo.java       # MediaView (handles media-inside-jar)
+    │       │   └── BootSplash.java      # logo · spinner · halo (all vector, one timer)
     │       ├── desktop/
     │       │   ├── DesktopPane.java     # layer order and work-area computation
     │       │   ├── Wallpaper.java       # logo wallpaper
@@ -662,7 +678,7 @@ forge-os/
     │           ├── Styles.java          # CSS pseudo-classes
     │           └── ToggleSwitch.java
     └── resources/
-        ├── assets/                      # runtime resources such as the boot animation MP4
+        ├── assets/                      # logo and banner SVGs (the boot MP4 is unused from 1.1.1)
         └── forgeos/css/
             ├── tokens-dark.css          # colours only
             ├── tokens-light.css         # colours only
